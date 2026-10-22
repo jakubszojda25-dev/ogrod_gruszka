@@ -723,6 +723,9 @@ function showTeam(){
 // ---------- LISTA KLIENTÓW ----------
 let cliSort = 'az';
 const shortDate = s => new Date(s+'T12:00').toLocaleDateString('pl-PL',{day:'numeric',month:'short',year:'numeric'});
+const cStats = c => { const d = (c.visits||[]).filter(v => v.done);
+  return {n: d.length, h: d.reduce((s, v) => s + hoursOf(v), 0), z: d.filter(v => v.paid).reduce((s, v) => s + (+v.amount || 0), 0),
+    list: d.sort((a, b) => b.date.localeCompare(a.date))}; };
 const lastDone = c => (c.visits||[]).filter(v => v.done).sort((a, b) => b.date.localeCompare(a.date))[0];
 const pending = c => (c.visits||[]).filter(v => !v.done && !v.cancelled).sort((a, b) => a.date.localeCompare(b.date))[0];
 const nextPlan = c => { const t = ymd(new Date()); return (c.visits||[]).filter(v => !v.done && !v.cancelled && v.date >= t).sort((a, b) => a.date.localeCompare(b.date))[0]; };
@@ -748,7 +751,13 @@ function showClients(){
     else { const k = x => x.l ? x.l.date : ''; cs.sort((a, b) => cliSort === 'old' ? k(a).localeCompare(k(b)) : k(b).localeCompare(k(a))); }
     $('list').innerHTML = cs.map(({c, l, n}) => `<div class="card" data-id="${c.id}"><b>${esc(c.name)}</b>
       <div class="muted">${[esc(c.address), esc(c.phone)].filter(Boolean).join(' · ')}</div>
-      <div style="margin-top:6px;font-size:14px">✅ Ostatnio wykonano: ${l ? `<b>${shortDate(l.date)}</b>${l.desc ? ' – ' + esc(l.desc.slice(0, 60)) + (l.desc.length > 60 ? '…' : '') : ''}` : '<span class="muted">jeszcze nic</span>'}</div>
+      ${(() => { const st = cStats(c); if (!st.n) return '<div style="margin-top:6px;font-size:14px" class="muted">✅ Jeszcze nic nie wykonano</div>';
+        return `<div style="margin-top:8px;font-size:14px;background:#f6faf6;border-radius:10px;padding:8px 10px">
+          <div class="row" style="margin-bottom:4px"><b>✅ Historia usług</b><span class="muted">${st.n} ${pl(st.n, 'praca', 'prace', 'prac')} · ⏱ ${fmtH(st.h)}</span></div>
+          ${st.list.slice(0, 3).map(v => `<div class="row" style="gap:8px;padding:3px 0;border-top:1px solid #e3eee4">
+            <span><b>${shortDate(v.date)}</b>${v.desc ? ' – ' + esc(v.desc.slice(0, 40)) + (v.desc.length > 40 ? '…' : '') : ''}</span>
+            <span style="white-space:nowrap">${hoursOf(v) ? '⏱ ' + fmtH(hoursOf(v)) : ''}</span></div>`).join('')}
+          ${st.n > 3 ? `<div class="muted" style="font-size:13px;margin-top:2px">+ ${st.n - 3} wcześniejszych – stuknij, aby zobaczyć wszystko</div>` : ''}</div>`; })()}
       ${n ? `<div style="font-size:14px">${n.date < ymd(new Date()) ? '⚠️ Zaległa' : '⏳ Następna'}: <b>${shortDate(n.date)}${n.time ? ', ' + n.time : ''}</b>${n.dur ? ' (' + fmtDur(n.dur) + ')' : ''}</div>${quickBtns(c, n)}` : ''}</div>`).join('')
       || '<p class="muted">Brak klientów.</p>';
     app.querySelectorAll('[data-id]').forEach(e => e.onclick = () => showClient(e.dataset.id));
@@ -844,16 +853,22 @@ function showClient(id){
   view = () => showClient(id); head(c.name, showClients);
   const vs = (c.visits||[]).slice().sort((a, b) => b.date.localeCompare(a.date));
   app.innerHTML = `<div class="card"><b>${esc(c.name)}</b><br>
-    📍 <a href="https://maps.apple.com/?q=${encodeURIComponent(c.address)}">${esc(c.address)}</a><br>
-    📞 <a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>
+    ${c.address ? `📍 <a href="${navUrl(c.address)}" target="_blank" rel="noopener">${esc(c.address)}</a><br>` : ''}
+    ${c.phone ? `📞 <a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : ''}
     ${c.every ? `<p>🔁 Wizyty: <b>${everyTxt(c.every).toLowerCase()}</b></p>` : ''}
     ${priceHtml(c)}
     ${c.notes ? `<p class="muted">${esc(c.notes)}</p>` : ''}
     <button class="btn sec" id="ed">✏️ Edytuj dane i cenę</button></div>
+    ${(() => { const st = cStats(c); return st.n ? `<div style="display:flex;gap:6px;margin-bottom:8px">
+      <div class="stat" style="padding:8px"><span class="muted" style="font-size:13px">Wykonane</span><b style="font-size:18px">${st.n}</b></div>
+      <div class="stat" style="padding:8px"><span class="muted" style="font-size:13px">Czas pracy</span><b style="font-size:18px">${fmtH(st.h)}</b></div>
+      <div class="stat" style="padding:8px"><span class="muted" style="font-size:13px">Zapłacono</span><b style="font-size:18px">${st.z} zł</b></div></div>` : ''; })()}
     <button class="btn" id="nv">+ Dodaj wizytę / termin</button><h3>Historia wizyt</h3>
     ${vs.map(v => `<div class="card" data-v="${v.id}" style="${v.cancelled ? 'opacity:.55' : ''}"><div class="row"><b>${plDate(v.date)}</b><span>${v.done ? '✅ Zrobione' : v.cancelled ? '🚫 Odwołana' : '⏳ Zaplanowane'}</span></div>
-      ${whenTxt(v) ? `<div style="font-size:14px">${whenTxt(v)}</div>` : ''}
+      ${v.done ? (hoursOf(v) ? `<div style="font-size:14px;font-weight:600">⏱ Usługa trwała: ${fmtH(hoursOf(v))}</div>` : '')
+        : (whenTxt(v) ? `<div style="font-size:14px">${whenTxt(v)}</div>` : '')}
       ${v.desc ? `<div>${esc(v.desc)}</div>` : ''}
+      ${(v.helpers || []).length ? `<div style="font-size:14px">👷 ${helpersTxt(v)}</div>` : ''}
       ${v.amount != null ? `<div>${v.amount} zł – ${v.paid ? '✅ zapłacone' : '❌ niezapłacone'}</div>` : ''}
       <div class="photos">${[...(v.before||[]).slice(0,2), ...(v.after||[]).slice(0,2)].map(p => `<img data-pid="${p}">`).join('')}</div>${quickBtns(c, v)}</div>`).join('')
       || '<p class="muted">Brak wizyt.</p>'}`;
