@@ -27,8 +27,8 @@ input,textarea,select{width:100%;padding:12px;font-size:16px;border:1px solid va
 input:focus,textarea:focus,select:focus{outline:2px solid var(--g);border-color:var(--g)}
 label{font-size:13px;color:#4f6f52;font-weight:600}
 h2,h3{color:var(--g)}
-nav{display:flex;background:#fff;border-bottom:2px solid var(--g2);gap:8px;padding:8px 12px}
-nav button{flex:1;padding:11px 4px;border:none;border-radius:10px;background:#f6faf6;font-size:14px;white-space:nowrap;color:#6b8a6e;font-family:inherit}
+nav{display:flex;background:#fff;border-bottom:2px solid var(--g2);gap:4px;padding:6px 6px}
+nav button{flex:1;min-width:0;padding:6px 1px;border:none;border-radius:10px;background:#f6faf6;font-size:10.5px;white-space:nowrap;display:flex;flex-direction:column;align-items:center;gap:2px;overflow:hidden;color:#6b8a6e;font-family:inherit}
 nav button.on{background:var(--g);color:#fff;font-weight:700}
 .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
 .grid div{padding:9px 0;border-radius:10px;font-size:14px}
@@ -38,6 +38,16 @@ nav button.on{background:var(--g);color:#fff;font-weight:700}
 .muted{color:#6b8a6e;font-size:14px}
 .row{display:flex;justify-content:space-between;align-items:center}
 a{color:var(--g);font-weight:600}
+nav .ic{font-size:19px;line-height:1.1}
+.modal{position:fixed;inset:0;background:#0007;z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:#fff;width:100%;max-width:600px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:16px 16px calc(18px + env(safe-area-inset-bottom))}
+.stat{flex:1;background:#f6faf6;border-radius:12px;padding:10px}.stat b{display:block;font-size:20px}
+.seg{display:flex;gap:6px;background:#f6faf6;padding:4px;border-radius:12px;margin-bottom:10px}
+.seg button{flex:1;padding:10px 2px;border:none;border-radius:9px;background:none;font-size:14px;font-weight:600;color:#6b8a6e;font-family:inherit}
+.seg button.on{background:#fff;color:var(--g);box-shadow:0 1px 4px #0001}
+.plus{width:44px;height:44px;border-radius:50%;border:none;background:var(--g);color:#fff;font-size:28px;line-height:1;padding:0;font-family:inherit;flex:none}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--g2);color:var(--g)}
+.tag.red{background:#ffebee;color:#c62828}.tag.orange{background:#fff3e0;color:#e65100}
 .sw{position:relative;margin-bottom:10px;border-radius:14px;overflow:hidden}
 .sw .swc{margin:0;position:relative;transition:transform .2s ease;touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .swdel{position:absolute;right:0;top:0;bottom:0;width:96px;background:#c62828;color:#fff;border:none;font-size:15px;font-weight:700;font-family:inherit}
@@ -45,15 +55,19 @@ a{color:var(--g);font-weight:600}
 .qk{width:48px;height:48px;border-radius:50%;border:2px solid;background:#fff;font-size:24px;font-weight:700;line-height:1;padding:0;font-family:inherit;display:inline-flex;align-items:center;justify-content:center}
 .qk.ok{border-color:var(--g);color:var(--g)}.qk.ok:active{background:var(--g);color:#fff}
 .qk.no{border-color:#e57373;color:#c62828}.qk.no:active{background:#c62828;color:#fff}
+.smsb{display:inline-flex;align-items:center;gap:4px;padding:10px 12px;border-radius:24px;background:#e3f2fd;color:#1565c0;font-size:14px;font-weight:700;text-decoration:none;margin-right:auto;white-space:nowrap}
 </style>
 </head>
 <body>
 <div class="top">
 <header><button id="back" style="display:none">‹</button><img id="logo" alt=""><span id="title">Gruszka</span></header>
-<nav id="nav" style="display:none"><button id="tCal" class="on">📅 Kalendarz</button><button id="tCli">👥 Klienci</button><button id="tHis">🕘 Historia</button></nav>
+<nav id="nav" style="display:none"><button id="tNew" class="on"><span class="ic">📰</span>Aktualności</button><button id="tCal"><span class="ic">📅</span>Kalendarz</button><button id="tCli"><span class="ic">👥</span>Klienci</button><button id="tPay"><span class="ic">💰</span>Płatności</button><button id="tHis"><span class="ic">🕘</span>Historia</button></nav>
 </div>
 <main id="app"><p class="muted">Ładowanie...</p></main>
 
+<script>
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+</script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
@@ -136,7 +150,22 @@ function setVisit(cid, vid, act){
   if (act === 'restore') v.cancelled = false;
   saveClient(c); if (view) view();
 }
-const quickBtns = (c, v) => (v.done || v.cancelled) ? '' : `<div class="qrow"><span class="muted" style="font-size:13px">Wizyta się odbyła?</span>
+// ---------- SMS do klienta ----------
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const getSig = () => { try { return localStorage.getItem('gruszka-sig') || ''; } catch(e) { return ''; } };
+const setSig = t => { try { localStorage.setItem('gruszka-sig', t); } catch(e) {} };
+function smsText(v){
+  const t = ymd(new Date());
+  const when = v.date === t ? 'dziś' : v.date === addDays(t, 1) ? 'jutro'
+    : new Date(v.date + 'T12:00').toLocaleDateString('pl-PL', {weekday: 'long', day: 'numeric', month: 'long'});
+  const sig = getSig();
+  return `Dzień dobry, przypominam o wizycie ${v.date === t || v.date === addDays(t, 1) ? when : 'w ' + when}${v.time ? ' o godz. ' + v.time : ''}${v.desc ? ' (' + v.desc + ')' : ''}. W razie zmian proszę o kontakt.${sig ? ' ' + sig : ''}`;
+}
+const smsBtn = (c, v) => {
+  const num = (c.phone || '').replace(/[^0-9+]/g, ''); if (!num) return '';
+  return `<a class="smsb" href="sms:${num}${isIOS ? '&' : '?'}body=${encodeURIComponent(smsText(v))}" onclick="event.stopPropagation()">💬 SMS</a>`;
+};
+const quickBtns = (c, v) => (v.done || v.cancelled) ? '' : `<div class="qrow">${smsBtn(c, v)}<span class="muted" style="font-size:13px">Odbyła się?</span>
   <button class="qk ok" title="Odbyła się" data-act="done" data-c="${c.id}" data-vid="${v.id}">✓</button>
   <button class="qk no" title="Nie odbyła się – anuluj" data-act="cancel" data-c="${c.id}" data-vid="${v.id}">✕</button></div>`;
 function bindQuick(){
@@ -144,8 +173,75 @@ function bindQuick(){
     e.stopPropagation();
     const {act, c, vid} = b.dataset;
     if (act === 'cancel' && !confirm('Anulować to zlecenie? Zniknie z kalendarza i przypomnień.')) return;
+    if (act === 'done') return doneDialog(c, vid);
     setVisit(c, vid, act);
   });
+}
+
+// ---------- wizyty cykliczne ----------
+const EVERY = [['', 'Nie powtarzaj'], ['7d', 'Co tydzień'], ['14d', 'Co 2 tygodnie'], ['21d', 'Co 3 tygodnie'], ['1m', 'Co miesiąc'],
+  ['2m', 'Co 2 miesiące'], ['3m', 'Co 3 miesiące'], ['6m', 'Co pół roku'], ['12m', 'Co rok']];
+const everyTxt = e => (EVERY.find(x => x[0] === e) || ['', ''])[1];
+function nextDate(d, e){
+  const n = parseInt(e); if (e.endsWith('d')) return addDays(d, n);
+  const x = new Date(d + 'T12:00'), day = x.getDate(); x.setDate(1); x.setMonth(x.getMonth() + n);
+  x.setDate(Math.min(day, new Date(x.getFullYear(), x.getMonth() + 1, 0).getDate())); return ymd(x);
+}
+function planNext(c, v){
+  if (!c.every) return null;
+  if ((c.visits||[]).some(x => x.id !== v.id && !x.done && !x.cancelled && x.date > v.date)) return null;
+  return nextDate(v.date, c.every);
+}
+function addNext(c, v, plan){
+  const d = planNext(c, v); if (!d) return null;
+  c.visits.push({id: newId(), date: d, time: v.time || '', dur: v.dur || null, done: false, cancelled: false, desc: plan || '',
+    remind: v.remind ?? 1, amount: null, paid: false, before: [], after: []});
+  return d;
+}
+
+// ---------- okno po odhaczeniu wizyty ----------
+function pickPhotos(cam, onFile){
+  const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*';
+  if (cam) i.setAttribute('capture', 'environment'); else i.multiple = true;
+  i.onchange = async () => { for (const f of i.files) await onFile(f); }; i.click();
+}
+function doneDialog(cid, vid){
+  const c = findClient(cid); if (!c) return;
+  const v = (c.visits||[]).find(x => x.id === vid); if (!v) return;
+  v.before = v.before || []; v.after = v.after || [];
+  const plan = v.desc || '', added = [], nd = planNext(c, v);
+  const w = document.createElement('div'); w.className = 'modal';
+  w.innerHTML = `<div class="sheet">
+    <div class="row"><h3 style="margin:0">✓ ${esc(c.name)}</h3><span class="muted">${shortDate(v.date)}</span></div>
+    <label>Co zostało zrobione</label><textarea id="mdD" rows="3" placeholder="np. przycięty żywopłot, wywiezione gałęzie">${esc(v.desc)}</textarea>
+    <label>Zdjęcia</label><div class="photos" id="mdP" style="margin-bottom:6px"></div>
+    <div style="display:flex;gap:8px"><button class="btn sec" style="margin:0" id="mdB">📷 Przed</button><button class="btn sec" style="margin:0" id="mdA">📷 Po</button></div>
+    <p class="muted" style="margin:6px 0 8px;text-align:center">z galerii: <a href="#" id="mdGB">przed</a> · <a href="#" id="mdGA">po</a></p>
+    <div style="display:flex;gap:10px;align-items:center"><div style="flex:1"><label>Kwota (zł)</label>
+      <input id="mdK" type="number" inputmode="decimal" value="${v.amount ?? c.price ?? ''}"></div>
+      <label style="flex:1"><input type="checkbox" id="mdZ" style="width:auto"> Zapłacone od razu</label></div>
+    ${nd ? `<p style="background:var(--g2);padding:10px;border-radius:10px;margin:4px 0">🔁 Następna wizyta zostanie dodana: <b>${shortDate(nd)}</b> (${everyTxt(c.every).toLowerCase()})</p>` : ''}
+    <button class="btn" id="mdS">✓ Zapisz – wizyta wykonana</button><button class="btn sec" id="mdC">Anuluj</button></div>`;
+  document.body.appendChild(w);
+  const q = id => w.querySelector('#' + id);
+  const drawPh = () => {
+    q('mdP').innerHTML = [...v.before.map(p => [p, 'przed']), ...v.after.map(p => [p, 'po'])]
+      .map(([p, t]) => `<div style="position:relative"><img data-pid="${p}"><span class="tag" style="position:absolute;left:4px;bottom:4px">${t}</span></div>`).join('');
+    w.querySelectorAll('img[data-pid]').forEach(async im => { const d = await getPhoto(im.dataset.pid); if (d) im.src = d; });
+  };
+  const addPh = (k, cam) => pickPhotos(cam, async f => { const id = newId(); await putPhoto(id, await shrink(f)); v[k].push(id); added.push(id); drawPh(); });
+  drawPh();
+  q('mdB').onclick = () => addPh('before', true); q('mdA').onclick = () => addPh('after', true);
+  q('mdGB').onclick = e => { e.preventDefault(); addPh('before', false); };
+  q('mdGA').onclick = e => { e.preventDefault(); addPh('after', false); };
+  q('mdC').onclick = () => { added.forEach(delPhoto); w.remove(); };
+  q('mdS').onclick = () => {
+    v.desc = q('mdD').value.trim(); v.done = true; v.cancelled = false;
+    v.amount = q('mdK').value === '' ? null : +q('mdK').value;
+    v.paid = q('mdZ').checked; v.paidAt = v.paid ? ymd(new Date()) : null;
+    addNext(c, v, plan);
+    saveClient(c); w.remove(); if (view) view();
+  };
 }
 
 let user = null, clients = [], unsub = null, view = null;
@@ -153,9 +249,11 @@ let calMonth = new Date(), selDay = ymd(new Date()), backFn = null;
 
 function head(t, back){$('title').textContent=t;backFn=back;$('back').style.display=back?'':'none'}
 $('back').onclick = () => backFn && backFn();
-function tab(w){[['tCal','cal'],['tCli','cli'],['tHis','his']].forEach(([i,k])=>$(i).classList.toggle('on',w===k))}
+function tab(w){[['tNew','new'],['tCal','cal'],['tCli','cli'],['tPay','pay'],['tHis','his']].forEach(([i,k])=>$(i).classList.toggle('on',w===k))}
+$('tNew').onclick = () => showNews();
 $('tCal').onclick = () => showCal();
 $('tCli').onclick = () => showClients();
+$('tPay').onclick = () => showPay();
 $('tHis').onclick = () => showHistory();
 
 // ---------- ZDJĘCIA: Firebase + kopia w telefonie ----------
@@ -211,7 +309,7 @@ onAuthStateChanged(auth, u => {
   let first = true;
   unsub = onSnapshot(collection(fs, 'users', u.uid, 'clients'), snap => {
     clients = snap.docs.map(d => d.data());
-    if (first) { first = false; showCal(); } else if (view) view();
+    if (first) { first = false; showNews(); } else if (view) view();
   }, e => alert('Błąd bazy: ' + e.message));
 });
 
@@ -221,18 +319,16 @@ function showLogin(){
     <img src="${iconUrl}" style="width:110px;display:block;margin:10px auto;border-radius:24px">
     <h2 style="margin-top:0;text-align:center">Witaj</h2>
     <label>E-mail</label><input id="em" type="email" autocomplete="username">
-    <label>Hasło (min. 6 znaków)</label><input id="pw" type="password" autocomplete="current-password">
+    <label>Hasło</label><input id="pw" type="password" autocomplete="current-password">
     <button class="btn" id="li">Zaloguj się</button>
-    <button class="btn sec" id="rg">Załóż nowe konto</button>
     <p style="text-align:center"><a href="#" id="rs">Nie pamiętam hasła</a></p>
     <p id="er" style="color:#c62828"></p></div>`;
   const er = m => $('er').textContent = m;
   const msg = e => ({'auth/invalid-email':'Nieprawidłowy e-mail','auth/invalid-credential':'Zły e-mail lub hasło',
     'auth/email-already-in-use':'Konto z tym e-mailem już istnieje','auth/weak-password':'Hasło musi mieć min. 6 znaków',
-    'auth/missing-password':'Podaj hasło','auth/network-request-failed':'Brak internetu'}[e.code] || e.message);
+    'auth/missing-password':'Podaj hasło','auth/network-request-failed':'Brak internetu','auth/too-many-requests':'Za dużo prób – spróbuj za chwilę'}[e.code] || e.message);
   const em = () => $('em').value.trim(), pw = () => $('pw').value;
   $('li').onclick = () => signInWithEmailAndPassword(auth, em(), pw()).catch(e => er(msg(e)));
-  $('rg').onclick = () => createUserWithEmailAndPassword(auth, em(), pw()).catch(e => er(msg(e)));
   $('rs').onclick = e => { e.preventDefault(); if(!em()) return er('Wpisz najpierw e-mail');
     sendPasswordResetEmail(auth, em()).then(() => er('Wysłano link do zmiany hasła na e-mail')).catch(e => er(msg(e))); };
 }
@@ -293,21 +389,128 @@ function showCal(){
     ${whenTxt(v) ? `<div style="font-size:14px;font-weight:600">${whenTxt(v)}</div>` : ''}
     <div class="muted">${esc(c.address)}</div>${v.desc ? `<div>${esc(v.desc)}</div>` : ''}${quickBtns(c, v)}</div>`).join('')
     || '<p class="muted">Brak wizyt tego dnia.</p>');
-  const rem = reminders();
-  const remHtml = rem.length ? `<div class="card" style="border-left:5px solid #f57c00"><b>Przypomnienia (${rem.length})</b>
-    ${rem.map(({c, v, t}) => `<div class="card" style="margin:8px 0 0;background:#fff8e1" data-c="${c.id}" data-v="${v.id}">
-      <b>${t}${v.time ? ', ' + v.time : ''}</b>${v.dur ? ` <span class="muted">(${fmtDur(v.dur)})</span>` : ''}<br>${esc(c.name)} – <span class="muted">${esc(c.address)}</span>
-      ${c.phone ? `<br><a href="tel:${esc(c.phone)}" onclick="event.stopPropagation()">📞 Zadzwoń</a>` : ''}${quickBtns(c, v)}</div>`).join('')}</div>` : '';
-  app.innerHTML = remHtml + `<div class="card"><div class="row">
+  reminders();
+  app.innerHTML = `<div class="card"><div class="row">
     <button class="btn sec" style="width:auto;margin:0" id="pm">‹</button>
     <b>${calMonth.toLocaleDateString('pl-PL', {month:'long', year:'numeric'})}</b>
     <button class="btn sec" style="width:auto;margin:0" id="nm">›</button></div><br>${g}</div>
-    <h3>${plDate(selDay)}</h3>${list}`;
+    <div class="row" style="margin:16px 0 8px"><h3 style="margin:0">${plDate(selDay)}</h3>
+      <button class="plus" id="addv" title="Dodaj wizytę w tym dniu">+</button></div>${list}`;
+  $('addv').onclick = () => addVisit(selDay, showCal);
   $('pm').onclick = () => { calMonth = new Date(y, m - 1, 1); showCal(); };
   $('nm').onclick = () => { calMonth = new Date(y, m + 1, 1); showCal(); };
   app.querySelectorAll('[data-d]').forEach(e => e.onclick = () => { selDay = e.dataset.d; showCal(); });
   app.querySelectorAll('[data-v]').forEach(e => e.onclick = () => editVisit(e.dataset.c, e.dataset.v, showCal));
   bindQuick();
+}
+
+// ---------- AKTUALNOŚCI ----------
+const pl = (n, a, b, c) => n === 1 ? a : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) ? b : c;
+const dueList = () => { const r = []; clients.forEach(c => (c.visits||[]).forEach(v => { if (v.done && !v.paid) r.push({c, v}); })); return r; };
+function showNews(){
+  view = showNews; tab('new'); head('Aktualności');
+  reminders();
+  const today = ymd(new Date()), tom = addDays(today, 1), wk = addDays(today, 7);
+  const items = clients.map(c => ({c, v: pending(c)})).filter(x => x.v)
+    .sort((a, b) => (a.v.date + (a.v.time || '99')).localeCompare(b.v.date + (b.v.time || '99')));
+  const todayV = []; clients.forEach(c => (c.visits||[]).forEach(v => { if (v.date === today && !v.done && !v.cancelled) todayV.push(v); }));
+  const todayMin = todayV.reduce((s, v) => s + (+v.dur || 0), 0);
+  const stops = []; clients.forEach(c => (c.visits||[]).forEach(v => { if (v.date === today && !v.done && !v.cancelled && c.address) stops.push({t: v.time || '99', a: c.address}); }));
+  stops.sort((a, b) => a.t.localeCompare(b.t));
+  const addrs = [...new Set(stops.map(x => x.a))];
+  const route = addrs.length ? 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + encodeURIComponent(addrs[addrs.length - 1])
+    + (addrs.length > 1 ? '&waypoints=' + encodeURIComponent(addrs.slice(0, -1).join('|')) : '') : '';
+  const due = dueList(), dueSum = due.reduce((s, x) => s + (+x.v.amount || 0), 0);
+  const grp = d => d < today ? '⚠️ Zaległe' : d === today ? '📍 Dziś' : d === tom ? 'Jutro' : d <= wk ? 'W tym tygodniu' : 'Później';
+  let html = `<div class="card" style="display:flex;gap:10px">
+      <div style="flex:1"><div class="muted">Dziś</div><b style="font-size:20px">${todayV.length} ${pl(todayV.length, 'wizyta', 'wizyty', 'wizyt')}</b>
+        ${todayMin ? `<div class="muted">${fmtDur(todayMin)} pracy</div>` : ''}</div>
+      <div style="flex:1;cursor:pointer" id="gopay"><div class="muted">Do zapłaty</div><b style="font-size:20px;color:${dueSum ? '#c62828' : 'inherit'}">${dueSum} zł</b>
+        <div class="muted">${due.length} ${pl(due.length, 'praca', 'prace', 'prac')} ›</div></div></div>
+    ${route ? `<a class="btn sec" style="text-align:center;text-decoration:none;box-sizing:border-box" href="${route}" target="_blank" rel="noopener">🗺 Trasa na dziś (${addrs.length} ${addrs.length === 1 ? 'adres' : 'adresy'})</a>` : ''}
+    <p class="muted" style="margin:10px 0 0">Najbliższa wizyta u każdego klienta:</p>`;
+  let g = '';
+  items.forEach(({c, v}) => {
+    const gg = grp(v.date);
+    if (gg !== g) { g = gg; html += `<h3 style="margin:16px 0 8px">${gg}</h3>`; }
+    html += `<div class="card" data-c="${c.id}" data-v="${v.id}" style="${v.date < today ? 'border-left:5px solid #c62828' : v.date === today ? 'border-left:5px solid var(--g)' : ''}">
+      <div class="row"><b>${esc(c.name)}</b><span class="muted">${shortDate(v.date)}</span></div>
+      ${whenTxt(v) ? `<div style="font-size:14px;font-weight:600">${whenTxt(v)}</div>` : ''}
+      ${v.desc ? `<div>🔧 ${esc(v.desc)}</div>` : ''}
+      <div style="font-size:14px;margin-top:4px">${c.address ? `📍 <a href="https://maps.apple.com/?q=${encodeURIComponent(c.address)}" onclick="event.stopPropagation()">${esc(c.address)}</a>` : ''}
+      ${c.phone ? `${c.address ? ' · ' : ''}📞 <a href="tel:${esc(c.phone)}" onclick="event.stopPropagation()">Zadzwoń</a>` : ''}</div>
+      ${quickBtns(c, v)}</div>`;
+  });
+  if (!items.length) html += '<p class="muted">Brak zaplanowanych wizyt. Dodasz je w Kalendarzu przyciskiem +.</p>';
+  app.innerHTML = html;
+  $('gopay').onclick = () => showPay();
+  app.querySelectorAll('[data-v]').forEach(e => e.onclick = () => editVisit(e.dataset.c, e.dataset.v, showNews));
+  bindQuick();
+}
+
+// ---------- NOWA WIZYTA Z KALENDARZA ----------
+function addVisit(date, back){
+  view = null; head('Nowa wizyta', back);
+  if (!clients.length) {
+    app.innerHTML = `<div class="card"><p>Nie masz jeszcze żadnych klientów.</p><button class="btn" id="nc">+ Dodaj klienta</button></div>`;
+    $('nc').onclick = () => editClient(null); return;
+  }
+  const cs = clients.slice().sort((a, b) => a.name.localeCompare(b.name, 'pl'));
+  app.innerHTML = `<div class="card">
+    <label>Klient</label><select id="cl"><option value="">— wybierz klienta —</option>
+      ${cs.map(c => `<option value="${c.id}">${esc(c.name)}${c.address ? ' – ' + esc(c.address) : ''}</option>`).join('')}</select>
+    <label>Data</label><input id="avd" type="date" value="${date}">
+    ${timeFields('av', {})}
+    <label>Usługa – co jest do zrobienia</label><textarea id="avs" rows="3" placeholder="np. przycięcie żywopłotu, koszenie"></textarea>
+    <label>Przypomnij</label><select id="avr"><option value="-1">Nie przypominaj</option><option value="0">W dniu wizyty</option>
+      <option value="1" selected>1 dzień wcześniej</option><option value="2">2 dni wcześniej</option><option value="7">Tydzień wcześniej</option></select>
+    <button class="btn" id="s">Zapisz wizytę</button>
+    <button class="btn sec" id="nc">+ To nowy klient – dodaj go</button></div>`;
+  $('nc').onclick = () => editClient(null);
+  $('s').onclick = () => {
+    const c = findClient($('cl').value); if (!c) return alert('Wybierz klienta');
+    const d = $('avd').value; if (!d) return alert('Wybierz datę');
+    (c.visits = c.visits || []).push({id: newId(), date: d, time: $('avt').value, dur: +$('avu').value || null, done: false, cancelled: false,
+      desc: $('avs').value.trim(), remind: +$('avr').value, amount: null, paid: false, before: [], after: []});
+    saveClient(c); selDay = d; back();
+  };
+}
+
+// ---------- PŁATNOŚCI ----------
+function markPaid(cid, vid, paid){
+  const c = findClient(cid); if (!c) return;
+  const v = (c.visits||[]).find(x => x.id === vid); if (!v) return;
+  if (paid && v.amount == null) {
+    const a = prompt('Ile zapłacił klient? (zł)', c.price ?? ''); if (a === null) return;
+    v.amount = a.trim() === '' ? null : +a.replace(',', '.');
+  }
+  v.paid = paid; v.paidAt = paid ? ymd(new Date()) : null;
+  saveClient(c); if (view) view();
+}
+function bindPay(){
+  app.querySelectorAll('[data-pay]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    if (b.dataset.pay === '0' && !confirm('Oznaczyć z powrotem jako niezapłacone?')) return;
+    markPaid(b.dataset.c, b.dataset.vid, b.dataset.pay === '1');
+  });
+}
+function showPay(){
+  view = showPay; tab('pay'); head('Płatności');
+  const list = dueList().sort((a, b) => a.v.date.localeCompare(b.v.date));
+  const sum = list.reduce((s, x) => s + (+x.v.amount || 0), 0);
+  app.innerHTML = `<div class="card"><div class="muted">Oczekuje na zapłatę</div>
+      <b style="font-size:22px;color:${sum ? '#c62828' : 'inherit'}">${sum} zł</b> <span class="muted">· ${list.length} ${pl(list.length, 'praca', 'prace', 'prac')}</span></div>
+    ${list.map(({c, v}) => `<div class="card" data-c="${c.id}" data-v="${v.id}">
+      <div class="row"><b>${esc(c.name)}</b><span class="muted">${shortDate(v.date)}</span></div>
+      ${v.desc ? `<div>${esc(v.desc)}</div>` : ''}
+      <div class="qrow" style="justify-content:space-between">
+        <span>${v.amount != null ? `<b style="font-size:18px">${v.amount} zł</b>` : '<span class="muted">kwota nieustalona</span>'} <span class="tag orange">oczekuje</span></span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="muted" style="font-size:13px">Zapłacone?</span>
+        <button class="qk ok" data-pay="1" data-c="${c.id}" data-vid="${v.id}">✓</button></span></div></div>`).join('')
+      || '<p class="muted">Wszystko zapłacone 🎉</p>'}
+    <p class="muted">Zapłacone prace znajdziesz w Historii → Płatności.</p>`;
+  app.querySelectorAll('[data-v]').forEach(e => e.onclick = () => editVisit(e.dataset.c, e.dataset.v, showPay));
+  bindPay();
 }
 
 // ---------- LISTA KLIENTÓW ----------
@@ -322,6 +525,9 @@ function showClients(){
     <select id="so"><option value="az">Sortuj: alfabetycznie</option>
       <option value="old">Sortuj: najdawniej robione</option><option value="new">Sortuj: ostatnio robione</option></select>
     <button class="btn" id="add">+ Nowy klient</button><br><div id="list"></div>
+    <div class="card" style="margin-top:20px"><label>💬 Podpis w SMS do klientów</label>
+      <input id="sig" placeholder="np. Pozdrawiam, Marek – usługi ogrodnicze" value="${esc(getSig())}">
+      <p class="muted" style="margin:0;font-size:13px">Dopisuje się na końcu przypomnienia wysyłanego przyciskiem 💬 SMS.</p></div>
     <p class="muted" style="text-align:center">Zalogowano: ${esc(user.email)}</p>
     <button class="btn sec" id="out">Wyloguj</button>`;
   $('so').value = cliSort;
@@ -333,7 +539,7 @@ function showClients(){
     else { const k = x => x.l ? x.l.date : ''; cs.sort((a, b) => cliSort === 'old' ? k(a).localeCompare(k(b)) : k(b).localeCompare(k(a))); }
     $('list').innerHTML = cs.map(({c, l, n}) => `<div class="card" data-id="${c.id}"><b>${esc(c.name)}</b>
       <div class="muted">${esc(c.address)}${c.phone ? ' · ' + esc(c.phone) : ''}</div>
-      <div style="margin-top:6px;font-size:14px">✅ Ostatnio: ${l ? `<b>${shortDate(l.date)}</b>${l.desc ? ' – ' + esc(l.desc.slice(0, 60)) + (l.desc.length > 60 ? '…' : '') : ''}` : '<span class="muted">jeszcze nic</span>'}</div>
+      <div style="margin-top:6px;font-size:14px">✅ Ostatnio wykonano: ${l ? `<b>${shortDate(l.date)}</b>${l.desc ? ' – ' + esc(l.desc.slice(0, 60)) + (l.desc.length > 60 ? '…' : '') : ''}` : '<span class="muted">jeszcze nic</span>'}</div>
       ${n ? `<div style="font-size:14px">${n.date < ymd(new Date()) ? '⚠️ Zaległa' : '⏳ Następna'}: <b>${shortDate(n.date)}${n.time ? ', ' + n.time : ''}</b>${n.dur ? ' (' + fmtDur(n.dur) + ')' : ''}</div>${quickBtns(c, n)}` : ''}</div>`).join('')
       || '<p class="muted">Brak klientów.</p>';
     app.querySelectorAll('[data-id]').forEach(e => e.onclick = () => showClient(e.dataset.id));
@@ -342,6 +548,7 @@ function showClients(){
   draw();
   $('q').oninput = draw;
   $('so').onchange = e => { cliSort = e.target.value; draw(); };
+  $('sig').oninput = e => setSig(e.target.value.trim());
   $('add').onclick = () => editClient(null);
   $('out').onclick = () => { if (confirm('Wylogować?')) signOut(auth); };
 }
@@ -389,30 +596,93 @@ function bindSwipe(onOpen){
     };
   });
 }
+let histTab = 'done', sumMonth = new Date();
+function showSummary(){
+  $('q').remove();
+  const y = sumMonth.getFullYear(), m = sumMonth.getMonth(), key = ymd(new Date(y, m, 1)).slice(0, 7);
+  const done = [], paidIn = [], cancelled = [];
+  clients.forEach(c => (c.visits||[]).forEach(v => {
+    if (v.done && v.date.startsWith(key)) done.push({c, v});
+    if (v.done && v.paid && (v.paidAt || v.date).startsWith(key)) paidIn.push({c, v});
+    if (v.cancelled && v.date.startsWith(key)) cancelled.push({c, v});
+  }));
+  const sum = a => a.reduce((s, x) => s + (+x.v.amount || 0), 0);
+  const value = sum(done), got = sum(paidIn), wait = sum(done.filter(x => !x.v.paid));
+  const mins = done.reduce((s, x) => s + (+x.v.dur || 0), 0);
+  const per = {}; done.forEach(({c, v}) => { per[c.id] = per[c.id] || {c, n: 0, s: 0}; per[c.id].n++; per[c.id].s += +v.amount || 0; });
+  const top = Object.values(per).sort((a, b) => b.s - a.s || b.n - a.n);
+  $('list').innerHTML = `<div class="card"><div class="row">
+      <button class="btn sec" style="width:auto;margin:0" id="sm">‹</button>
+      <b>${sumMonth.toLocaleDateString('pl-PL', {month: 'long', year: 'numeric'})}</b>
+      <button class="btn sec" style="width:auto;margin:0" id="sn">›</button></div></div>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <div class="stat"><span class="muted">Wykonane prace</span><b>${done.length}</b></div>
+      <div class="stat"><span class="muted">Czas pracy</span><b>${mins ? fmtDur(mins) : '–'}</b></div></div>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <div class="stat"><span class="muted">Wartość prac</span><b>${value} zł</b></div>
+      <div class="stat"><span class="muted">Wpłynęło</span><b style="color:var(--g)">${got} zł</b></div></div>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <div class="stat"><span class="muted">Czeka na zapłatę</span><b style="color:${wait ? '#c62828' : 'inherit'}">${wait} zł</b></div>
+      <div class="stat"><span class="muted">Anulowane</span><b>${cancelled.length}</b></div></div>
+    ${top.length ? `<h3>Klienci w tym miesiącu</h3>${top.map(x => `<div class="card row" data-id="${x.c.id}">
+      <span><b>${esc(x.c.name)}</b><br><span class="muted">${x.n} ${pl(x.n, 'praca', 'prace', 'prac')}</span></span><b>${x.s} zł</b></div>`).join('')}` : '<p class="muted">Brak wykonanych prac w tym miesiącu.</p>'}
+    <p class="muted" style="font-size:13px">„Wpłynęło” liczy płatności według dnia zapłaty, pozostałe pozycje według dnia wykonania pracy.</p>`;
+  $('sm').onclick = () => { sumMonth = new Date(y, m - 1, 1); showHistory(); };
+  $('sn').onclick = () => { sumMonth = new Date(y, m + 1, 1); showHistory(); };
+  app.querySelectorAll('[data-id]').forEach(e => e.onclick = () => showClient(e.dataset.id));
+}
 function showHistory(){
-  view = showHistory; tab('his'); head('Historia prac');
-  app.innerHTML = `<input id="q" placeholder="🔍 Szukaj: klient, adres, opis">
-    <p class="muted" style="margin:0 0 4px">Przesuń wpis w lewo, żeby go usunąć.</p><div id="list"></div>`;
+  view = showHistory; tab('his'); head('Historia');
+  app.innerHTML = `<div class="seg"><button id="hDone" class="${histTab === 'done' ? 'on' : ''}">✅ Wykonane</button>
+      <button id="hPay" class="${histTab === 'pay' ? 'on' : ''}">💰 Płatności</button>
+      <button id="hSum" class="${histTab === 'sum' ? 'on' : ''}">📊 Miesiąc</button></div>
+    <input id="q" placeholder="🔍 Szukaj: klient, adres, opis">
+    ${histTab === 'done' ? '<p class="muted" style="margin:0 0 4px">Przesuń wpis w lewo, żeby go usunąć.</p>' : ''}<div id="list"></div>`;
+  $('hDone').onclick = () => { histTab = 'done'; showHistory(); };
+  $('hPay').onclick = () => { histTab = 'pay'; showHistory(); };
+  $('hSum').onclick = () => { histTab = 'sum'; showHistory(); };
+  if (histTab === 'sum') return showSummary();
   const draw = () => {
     const f = $('q').value.toLowerCase(), all = [];
     clients.forEach(c => (c.visits||[]).forEach(v => {
-      if (v.done && (c.name + ' ' + c.address + ' ' + (v.desc||'')).toLowerCase().includes(f)) all.push({c, v});
+      const ok = histTab === 'done' ? v.done : (v.done && v.paid);
+      if (ok && (c.name + ' ' + c.address + ' ' + (v.desc||'')).toLowerCase().includes(f)) all.push({c, v});
     }));
-    all.sort((a, b) => b.v.date.localeCompare(a.v.date));
+    const dOf = x => histTab === 'pay' ? (x.v.paidAt || x.v.date) : x.v.date;
+    all.sort((a, b) => dOf(b).localeCompare(dOf(a)));
     let html = '', mon = '';
-    all.forEach(({c, v}) => {
-      const m = new Date(v.date + 'T12:00').toLocaleDateString('pl-PL', {month: 'long', year: 'numeric'});
-      if (m !== mon) { mon = m; html += `<h3 style="margin:16px 0 8px">${m}</h3>`; }
-      html += `<div class="sw" data-c="${c.id}" data-v="${v.id}"><button class="swdel">🗑<br>Usuń</button>
-        <div class="card swc">
-        <div class="row"><b>${esc(c.name)}</b><span class="muted">${shortDate(v.date)}</span></div>
-        <div class="muted">${esc(c.address)}</div>${v.desc ? `<div>${esc(v.desc)}</div>` : ''}
-        ${v.amount != null ? `<div style="font-size:14px">${v.amount} zł – ${v.paid ? '✅ zapłacone' : '❌ niezapłacone'}</div>` : ''}
-        <div class="photos">${[...(v.before||[]).slice(0,2), ...(v.after||[]).slice(0,2)].map(p => `<img data-pid="${p}" draggable="false">`).join('')}</div></div></div>`;
-    });
-    $('list').innerHTML = html || '<p class="muted">Brak wykonanych prac.</p>';
-    loadImgs();
-    bindSwipe((cid, vid) => editVisit(cid, vid, showHistory));
+    if (histTab === 'done') {
+      all.forEach(({c, v}) => {
+        const m = new Date(v.date + 'T12:00').toLocaleDateString('pl-PL', {month: 'long', year: 'numeric'});
+        if (m !== mon) { mon = m; html += `<h3 style="margin:16px 0 8px">${m}</h3>`; }
+        html += `<div class="sw" data-c="${c.id}" data-v="${v.id}"><button class="swdel">🗑<br>Usuń</button>
+          <div class="card swc">
+          <div class="row"><b>${esc(c.name)}</b><span class="muted">${shortDate(v.date)}</span></div>
+          <div class="muted">${esc(c.address)}</div>${v.desc ? `<div>${esc(v.desc)}</div>` : ''}
+          ${v.amount != null ? `<div style="font-size:14px">${v.amount} zł <span class="tag ${v.paid ? '' : 'orange'}">${v.paid ? 'zapłacone' : 'oczekuje'}</span></div>` : ''}
+          <div class="photos">${[...(v.before||[]).slice(0,2), ...(v.after||[]).slice(0,2)].map(p => `<img data-pid="${p}" draggable="false">`).join('')}</div></div></div>`;
+      });
+      $('list').innerHTML = html || '<p class="muted">Brak wykonanych prac.</p>';
+      loadImgs();
+      bindSwipe((cid, vid) => editVisit(cid, vid, showHistory));
+    } else {
+      const sums = {};
+      all.forEach(x => { const m = dOf(x).slice(0, 7); sums[m] = (sums[m] || 0) + (+x.v.amount || 0); });
+      all.forEach(({c, v}) => {
+        const d = v.paidAt || v.date, mk = d.slice(0, 7);
+        if (mk !== mon) { mon = mk; html += `<div class="row" style="margin:16px 0 8px"><h3 style="margin:0">${new Date(d + 'T12:00').toLocaleDateString('pl-PL', {month: 'long', year: 'numeric'})}</h3>
+          <b>${sums[mk]} zł</b></div>`; }
+        html += `<div class="card" data-c="${c.id}" data-v="${v.id}">
+          <div class="row"><b>${esc(c.name)}</b><b>${v.amount != null ? v.amount + ' zł' : '–'}</b></div>
+          <div class="muted" style="font-size:14px">Praca: ${shortDate(v.date)}${v.paidAt ? ' · zapłacono: ' + shortDate(v.paidAt) : ''}</div>
+          ${v.desc ? `<div>${esc(v.desc)}</div>` : ''}
+          <div class="qrow"><span class="tag">✓ zapłacone</span>
+            <button class="btn sec" style="width:auto;margin:0;padding:8px 12px;font-size:14px" data-pay="0" data-c="${c.id}" data-vid="${v.id}">↩ Cofnij</button></div></div>`;
+      });
+      $('list').innerHTML = html || '<p class="muted">Brak zapłaconych prac.</p>';
+      app.querySelectorAll('[data-v]').forEach(e => e.onclick = () => editVisit(e.dataset.c, e.dataset.v, showHistory));
+      bindPay();
+    }
   };
   draw();
   $('q').oninput = draw;
@@ -426,6 +696,7 @@ function showClient(id){
   app.innerHTML = `<div class="card"><b>${esc(c.name)}</b><br>
     📍 <a href="https://maps.apple.com/?q=${encodeURIComponent(c.address)}">${esc(c.address)}</a><br>
     📞 <a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>
+    ${c.every ? `<p>🔁 Wizyty: <b>${everyTxt(c.every).toLowerCase()}</b></p>` : ''}
     ${priceHtml(c)}
     ${c.notes ? `<p class="muted">${esc(c.notes)}</p>` : ''}
     <button class="btn sec" id="ed">✏️ Edytuj dane i cenę</button></div>
@@ -457,6 +728,8 @@ function editClient(id){
     <label>Telefon</label><input id="p" type="tel" value="${esc(c.phone)}">
     <label>Adres</label><input id="a" value="${esc(c.address)}">
     <label>Stawka za wizytę (zł)</label><input id="pr" type="number" inputmode="decimal" value="${c.price ?? ''}">
+    <label>🔁 Powtarzaj wizyty</label><select id="ev">${EVERY.map(([k, t]) => `<option value="${k}" ${(c.every || '') === k ? 'selected' : ''}>${t}</option>`).join('')}</select>
+    <p class="muted" style="margin:-4px 0 10px;font-size:13px">Po odhaczeniu wizyty kolejny termin doda się sam.</p>
     <label>Notatki (np. rodzaj żywopłotu, kod do bramy)</label><textarea id="no" rows="3">${esc(c.notes)}</textarea>
     ${isNew ? `</div><div class="card"><h3 style="margin-top:0">Pierwsza wizyta (opcjonalnie)</h3>
     <label>Data</label><input id="fd" type="date" value="${fv.date}">
@@ -497,7 +770,7 @@ function editClient(id){
 
   $('s').onclick = () => {
     c.name = $('n').value.trim(); if (!c.name) return alert('Podaj imię i nazwisko');
-    c.phone = $('p').value.trim(); c.address = $('a').value.trim(); c.notes = $('no').value.trim();
+    c.phone = $('p').value.trim(); c.address = $('a').value.trim(); c.notes = $('no').value.trim(); c.every = $('ev').value;
     const np = $('pr').value === '' ? null : +$('pr').value;
     if (np !== null && np !== c.price) (c.priceHist = c.priceHist || []).push({date: ymd(new Date()), price: np});
     c.price = np;
@@ -523,6 +796,7 @@ function editVisit(cid, vid, back){
   c.visits = c.visits || [];
   const found = c.visits.find(x => x.id === vid), isNew = !found;
   const v = found || {id: newId(), date: selDay || ymd(new Date()), done: false, desc: '', remind: 1, amount: null, paid: false, before: [], after: []};
+  const wasDone = !!v.done, plan0 = v.desc || '';
   v.before = v.before || []; v.after = v.after || [];
   const added = [], removed = [];
   head(c.name, () => { added.forEach(delPhoto); back(); });
@@ -552,7 +826,7 @@ function editVisit(cid, vid, back){
     <p class="muted">Dotknij zdjęcia, aby je powiększyć lub usunąć.</p>`;
     loadImgs();
     const keep = () => { v.date = $('dt').value; v.time = $('dtt').value; v.dur = +$('dtu').value || null; v.remind = +$('rm').value; v.done = $('dn').checked; if (v.done) v.cancelled = false; v.desc = $('ds').value;
-      v.amount = $('am').value === '' ? null : +$('am').value; v.paid = $('pd').checked; };
+      v.amount = $('am').value === '' ? null : +$('am').value; v.paid = $('pd').checked; v.paidAt = v.paid ? (v.paidAt || ymd(new Date())) : null; };
     const add = k => { keep(); const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.multiple = true;
       i.onchange = async () => { for (const f of i.files) { const id = newId(); await putPhoto(id, await shrink(f)); v[k].push(id); added.push(id); } draw(); };
       i.click(); };
@@ -567,6 +841,7 @@ function editVisit(cid, vid, back){
     $('s').onclick = () => { keep(); if (!v.date) return alert('Wybierz datę');
       const i = c.visits.findIndex(x => x.id === v.id); if (i >= 0) c.visits[i] = v; else c.visits.push(v);
       const nx = $('nx').value;
+      if (!wasDone && v.done && !nx) addNext(c, v, plan0);
       if (nx) c.visits.push({id: newId(), date: nx, time: $('nxt').value, dur: +$('nxu').value || null, done: false, desc: '',
         remind: 1, amount: null, paid: false, before: [], after: []});
       removed.forEach(delPhoto); saveClient(c); back(); };
