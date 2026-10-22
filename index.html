@@ -47,13 +47,28 @@ nav .ic{font-size:19px;line-height:1.1}
 .chips label{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid var(--g3);border-radius:20px;font-size:15px;color:inherit;background:#fbfdfb}
 .chips input{width:18px;height:18px;margin:0}
 .modal{position:fixed;inset:0;background:#0007;z-index:20;display:flex;align-items:flex-end;justify-content:center;overflow:auto;-webkit-overflow-scrolling:touch}
-.chat{height:300px;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;display:flex;flex-direction:column;gap:8px;padding:4px 2px 8px;border-bottom:1px solid var(--g2);margin-bottom:8px}
+.chat{height:300px;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;display:flex;flex-direction:column;gap:8px;padding:4px 2px 8px;border-bottom:1px solid var(--g2);margin-bottom:8px}
 .chat>:first-child{margin-top:auto}
-.bub{align-self:flex-start;max-width:88%;min-width:0;overflow-wrap:anywhere;word-break:break-word;background:var(--g2);border-radius:16px 16px 16px 4px;padding:8px 12px;position:relative}
+.bub{align-self:flex-start;max-width:88%;min-width:0;box-sizing:border-box;overflow:hidden;overflow-wrap:break-word;word-wrap:break-word;word-break:break-word;-webkit-hyphens:auto;hyphens:auto;background:var(--g2);border-radius:16px 16px 16px 4px;padding:8px 12px;position:relative}
 .bub.me{align-self:flex-end;background:var(--g);color:#fff;border-radius:16px 16px 4px 16px}
+.bub .btxt{overflow-wrap:anywhere;word-break:break-word}
 .bub .meta{font-size:11px;opacity:.7;margin-top:3px;display:flex;gap:10px;justify-content:space-between;align-items:center}
 .bub .x{background:none;border:none;color:inherit;opacity:.8;font-size:15px;padding:0 0 0 8px;font-family:inherit}
 .bub textarea{margin:4px 0;color:#1b3a1d;min-width:220px}
+.wxs{display:flex;gap:6px;overflow-x:auto;padding:2px 0 6px;margin-bottom:4px}
+.wxd{flex:none;width:62px;text-align:center;background:#f6faf6;border-radius:12px;padding:6px 2px;font-size:12px;border:2px solid transparent}
+.wxd b{display:block;font-size:13px}.wxd .i{font-size:22px;line-height:1.3}.wxd.bad{background:#fff3e0}.wxd.vis{border-color:var(--g3)}
+.cmp{position:relative;width:100%;aspect-ratio:3/4;max-height:70vh;border-radius:12px;overflow:hidden;background:#111;touch-action:none;user-select:none;-webkit-user-select:none}
+.cmp img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}
+.cmp .bar{position:absolute;top:0;bottom:0;width:3px;background:#fff;box-shadow:0 0 6px #0008;transform:translateX(-1.5px)}
+.cmp .knob{position:absolute;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;border-radius:50%;background:#fff;box-shadow:0 1px 6px #0006;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--g)}
+.cmp .lb{position:absolute;top:10px;padding:3px 10px;border-radius:12px;background:#000a;color:#fff;font-size:13px;font-weight:700}
+.thumbs{display:flex;gap:6px;overflow-x:auto;margin:6px 0}.thumbs img{width:54px;height:54px;object-fit:cover;border-radius:8px;border:3px solid transparent;flex:none}.thumbs img.on{border-color:var(--g)}
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:50;background:#1b3a1d;color:#fff;
+  border-radius:14px;padding:10px 10px 10px 16px;display:flex;align-items:center;gap:12px;box-shadow:0 4px 16px #0005;width:calc(100% - 32px);max-width:560px;font-size:15px}
+.toast span{flex:1}.toast button{border:none;border-radius:10px;background:#a5d6a7;color:#1b3a1d;font-weight:700;font-size:15px;padding:10px 14px;font-family:inherit;white-space:nowrap}
+.toast .bar2{position:absolute;left:0;bottom:0;height:3px;background:#a5d6a7;border-radius:0 0 0 14px;animation:shrink 7s linear forwards}
+@keyframes shrink{from{width:100%}to{width:0}}
 .chatin{display:flex;gap:8px;align-items:flex-end}.chatin textarea{margin:0;min-height:44px;resize:none}
 .chatin button{flex:none;width:48px;height:44px;border:none;border-radius:12px;background:var(--g);color:#fff;font-size:20px}
 .sheet{background:#fff;width:100%;max-width:600px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:16px 16px calc(18px + env(safe-area-inset-bottom))}
@@ -109,6 +124,7 @@ const fs = initializeFirestore(fb, { localCache: persistentLocalCache() });
 // ---------- pomocnicze ----------
 const $ = id => document.getElementById(id);
 const app = $('app');
+const APP_VER = '22.10.2026 · 23:55';
 
 // ---------- LOGO: drzewo gruszy ----------
 const ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
@@ -254,6 +270,7 @@ function moveDialog(cid, vid, after = afterDefault){
     ${c.phone ? '<label><input type="checkbox" id="mvs" style="width:auto"> Wyślij klientowi SMS o nowym terminie</label><br><br>' : ''}
     <button class="btn" id="mvS">Przenieś</button><button class="btn sec" id="mvC">Wróć</button>`);
   q('mvC').onclick = () => w.remove();
+  const prevMv = findClient(cid);
   q('mvS').onclick = () => {
     const nd = q('mvd').value; if (!nd) return alert('Wybierz nową datę');
     const old = {d: v.date, t: v.time};
@@ -263,6 +280,7 @@ function moveDialog(cid, vid, after = afterDefault){
     saveClient(c); w.remove(); selDay = nd;
     const sms = q('mvs') && q('mvs').checked;
     after();
+    toastUndo(`Przeniesiono na ${shortDate(nd)}`, restoreClient(prevMv));
     if (sms) location.href = smsHref(c, withSig(`Dzień dobry, wizyta zaplanowana ${whenPl(old.d, old.t)} zostaje przeniesiona – nowy termin: ${whenPl(nd, v.time)}. Przepraszam za zmianę.`));
   };
 }
@@ -275,12 +293,14 @@ function cancelDialog(cid, vid, after = afterDefault){
     ${c.phone ? '<label><input type="checkbox" id="cxs" style="width:auto" checked> Wyślij klientowi SMS o odwołaniu</label><br><br>' : ''}
     <button class="btn del" id="cxS">✕ Odwołaj wizytę</button><button class="btn sec" id="cxC">Wróć</button>`);
   q('cxC').onclick = () => w.remove();
+  const prevCx = findClient(cid);
   q('cxS').onclick = () => {
     v.cancelled = true; v.done = false; v.cancelReason = q('cxr').value.trim();
     logAdd(c, `Odwołano wizytę z ${shortDate(v.date)}${v.cancelReason ? '. Powód: ' + v.cancelReason : ''}`, 'cancel');
     saveClient(c); w.remove();
     const sms = q('cxs') && q('cxs').checked;
     after();
+    toastUndo('Odwołano wizytę', restoreClient(prevCx));
     if (sms) location.href = smsHref(c, withSig(`Dzień dobry, niestety muszę odwołać wizytę zaplanowaną ${whenPl(v.date, v.time)}. Odezwę się w sprawie nowego terminu.`));
   };
 }
@@ -355,7 +375,7 @@ function doneDialog(cid, vid){
   const c = findClient(cid); if (!c) return;
   const v = (c.visits||[]).find(x => x.id === vid); if (!v) return;
   v.before = v.before || []; v.after = v.after || [];
-  const plan = v.desc || '', added = [], nd = planNext(c, v);
+  const plan = v.desc || '', added = [], nd = planNext(c, v), prevDn = findClient(cid);
   if (!(v.helpers || []).length && (v.team || []).length) v.helpers = v.team.map(t => ({id: t.id, name: t.name, hours: null}));
   const w = document.createElement('div'); w.className = 'modal';
   w.innerHTML = `<div class="sheet">
@@ -395,6 +415,7 @@ function doneDialog(cid, vid){
     addNext(c, v, plan);
     playSiren();
     saveClient(c); w.remove(); if (view) view();
+    toastUndo('✓ Zapisano wykonanie i płatność', () => { saveClient(prevDn); added.forEach(delPhoto); });
   };
 }
 
@@ -506,11 +527,28 @@ function saveClient(c){
   setDoc(doc(fs, 'users', user.uid, 'clients', c.id), c).catch(e => alert('Błąd zapisu: ' + e.message));
 }
 function removeClient(c){
+  const prev = findClient(c.id) || c;
   clients = clients.filter(x => x.id !== c.id);
-  (c.visits||[]).forEach(v => [...(v.before||[]), ...(v.after||[])].forEach(delPhoto));
   deleteDoc(doc(fs, 'users', user.uid, 'clients', c.id)).catch(e => alert('Błąd: ' + e.message));
+  toastUndo(`Usunięto klienta ${esc(prev.name)}`, restoreClient(prev), () => (prev.visits || []).forEach(v => photosOf(v).forEach(delPhoto)));
 }
 const findClient = id => { const c = clients.find(x => x.id === id); return c ? structuredClone(c) : null; };
+
+// ---------- COFNIJ ----------
+let undoT = null, undoCommit = null;
+function flushUndo(){ clearTimeout(undoT); undoT = null; const c = undoCommit; undoCommit = null; $('toast')?.remove(); if (c) c(); }
+function toastUndo(msg, restore, commit){
+  flushUndo();
+  const t = document.createElement('div'); t.id = 'toast'; t.className = 'toast';
+  t.innerHTML = `<span>${msg}</span><button>↩ Cofnij</button><div class="bar2"></div>`;
+  document.body.appendChild(t);
+  undoCommit = commit || null;
+  t.querySelector('button').onclick = () => { clearTimeout(undoT); undoT = null; undoCommit = null; t.remove(); restore(); if (view) view(); };
+  undoT = setTimeout(flushUndo, 7000);
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushUndo(); });
+const photosOf = v => [...(v.before || []), ...(v.after || [])];
+const restoreClient = prev => () => saveClient(prev);
 
 // ---------- PRZYPOMNIENIA ----------
 function reminders(){
@@ -561,14 +599,88 @@ function showCal(){
     <button class="btn sec" style="width:auto;margin:0" id="pm">‹</button>
     <b>${calMonth.toLocaleDateString('pl-PL', {month:'long', year:'numeric'})}</b>
     <button class="btn sec" style="width:auto;margin:0" id="nm">›</button></div><br>${g}</div>
-    <div class="row" style="margin:16px 0 8px"><h3 style="margin:0">${plDate(selDay)}</h3>
+    <div class="row" style="margin:16px 0 8px"><div><h3 style="margin:0">${plDate(selDay)}</h3>
+      ${wxDay(selDay) ? `<div style="font-size:13px">${wxLine(wxDay(selDay))}</div>${dayList.length ? wxWarn(wxDay(selDay)) : ''}` : ''}</div>
       <button class="plus" id="addv" title="Dodaj wizytę w tym dniu">+</button></div>${list}`;
   $('addv').onclick = () => addVisit(selDay, showCal);
+  loadWx();
   $('pm').onclick = () => { calMonth = new Date(y, m - 1, 1); showCal(); };
   $('nm').onclick = () => { calMonth = new Date(y, m + 1, 1); showCal(); };
   app.querySelectorAll('[data-d]').forEach(e => e.onclick = () => { selDay = e.dataset.d; showCal(); });
   app.querySelectorAll('[data-v]').forEach(e => e.onclick = () => editVisit(e.dataset.c, e.dataset.v, showCal));
   bindQuick();
+}
+
+// ---------- POGODA (Studzionka, open-meteo.com) ----------
+const WX_URL = 'https://api.open-meteo.com/v1/forecast?latitude=49.9611&longitude=18.775&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max&timezone=Europe%2FWarsaw&forecast_days=7';
+let wx = (() => { try { return JSON.parse(localStorage.getItem('gruszka-wx')) || null; } catch(e) { return null; } })(), wxBusy = false;
+function loadWx(){
+  if (wxBusy || (wx && Date.now() - wx.t < 3600e3)) return;
+  wxBusy = true;
+  fetch(WX_URL).then(r => r.json()).then(j => {
+    const d = j.daily, days = {};
+    d.time.forEach((t, i) => days[t] = {c: d.weather_code[i], hi: d.temperature_2m_max[i], lo: d.temperature_2m_min[i], p: d.precipitation_sum[i], pp: d.precipitation_probability_max[i]});
+    wx = {t: Date.now(), days}; try { localStorage.setItem('gruszka-wx', JSON.stringify(wx)); } catch(e) {}
+    if (view === showNews || view === showCal) view();
+  }).catch(() => {}).finally(() => { wxBusy = false; });
+}
+const wxDay = d => wx && wx.days ? wx.days[d] : null;
+const wxIcon = c => c === 0 ? '☀️' : c <= 2 ? '🌤' : c === 3 ? '☁️' : c <= 48 ? '🌫' : c <= 57 ? '🌦' : c <= 67 ? '🌧' : c <= 77 ? '🌨' : c <= 82 ? '🌧' : c <= 86 ? '🌨' : '⛈';
+const wxName = c => c === 0 ? 'bezchmurnie' : c <= 2 ? 'trochę chmur' : c === 3 ? 'pochmurno' : c <= 48 ? 'mgła' : c <= 57 ? 'mżawka' : c <= 67 ? 'deszcz' : c <= 77 ? 'śnieg' : c <= 82 ? 'przelotne opady' : c <= 86 ? 'śnieg' : 'burza';
+const wxBad = w => !!w && (w.pp >= 60 || w.p >= 3 || w.c >= 95);
+const mm = x => String(Math.round(x * 10) / 10).replace('.', ',');
+const wxLine = w => w ? `${wxIcon(w.c)} ${Math.round(w.hi)}° / ${Math.round(w.lo)}° · ${wxName(w.c)} · 💧 ${w.pp ?? 0}%${w.p ? ', ' + mm(w.p) + ' mm' : ''}` : '';
+const wxWarn = w => wxBad(w) ? `<div class="tag orange" style="margin-top:4px">${w.c >= 95 ? '⛈ burza' : '🌧 możliwy deszcz'} – rozważ przeniesienie</div>` : '';
+
+// ---------- PORÓWNANIE PRZED / PO ----------
+function compareView(v, title){
+  const B = v.before || [], A = v.after || []; if (!B.length || !A.length) return;
+  let bi = 0, ai = 0, pos = 50;
+  const [w, q] = sheet(`<div class="row" style="margin-bottom:8px"><h3 style="margin:0">🔀 Przed / po</h3><span class="muted">${esc(title)}</span></div>
+    <div class="cmp" id="cmp"><img id="ia"><img id="ib"><span class="lb" style="left:10px">PRZED</span><span class="lb" style="right:10px">PO</span>
+      <div class="bar" id="bar"></div><div class="knob" id="knob">↔</div></div>
+    <p class="muted" style="text-align:center;margin:6px 0">Przesuwaj palcem po zdjęciu</p>
+    ${B.length > 1 ? `<label>Zdjęcie przed</label><div class="thumbs" id="tb">${B.map((p, i) => `<img data-pid="${p}" data-i="${i}" class="${i ? '' : 'on'}">`).join('')}</div>` : ''}
+    ${A.length > 1 ? `<label>Zdjęcie po</label><div class="thumbs" id="ta">${A.map((p, i) => `<img data-pid="${p}" data-i="${i}" class="${i ? '' : 'on'}">`).join('')}</div>` : ''}
+    <button class="btn" id="shr">📤 Udostępnij zdjęcie przed i po</button><button class="btn sec" id="cls">Zamknij</button>`);
+  const src = {};
+  const load = async id => src[id] || (src[id] = await getPhoto(id));
+  const show = async () => { q('ib').src = await load(B[bi]) || ''; q('ia').src = await load(A[ai]) || ''; };
+  const setPos = p => { pos = Math.max(0, Math.min(100, p)); q('ib').style.clipPath = `inset(0 ${100 - pos}% 0 0)`; q('bar').style.left = pos + '%'; q('knob').style.left = pos + '%'; };
+  const box = q('cmp');
+  const mv = e => { const r = box.getBoundingClientRect(); setPos((e.clientX - r.left) / r.width * 100); };
+  box.addEventListener('pointerdown', e => { box.setPointerCapture(e.pointerId); mv(e); });
+  box.addEventListener('pointermove', e => { if (e.buttons || e.pointerType === 'touch') mv(e); });
+  w.querySelectorAll('.thumbs img').forEach(async im => { im.src = await load(im.dataset.pid) || ''; im.onclick = () => {
+    const isB = im.parentElement.id === 'tb'; if (isB) bi = +im.dataset.i; else ai = +im.dataset.i;
+    im.parentElement.querySelectorAll('img').forEach(x => x.classList.toggle('on', x === im)); show(); }; });
+  setPos(50); show();
+  q('cls').onclick = () => w.remove();
+  q('shr').onclick = async () => {
+    const [b, a] = await Promise.all([load(B[bi]), load(A[ai])]); if (!b || !a) return;
+    const img = s => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = s; });
+    const [ib, ia] = await Promise.all([img(b), img(a)]);
+    const W = 720, H = 960, cv = document.createElement('canvas'); cv.width = W * 2 + 12; cv.height = H; const x = cv.getContext('2d');
+    x.fillStyle = '#fff'; x.fillRect(0, 0, cv.width, H);
+    const draw = (im, dx) => { const s = Math.max(W / im.width, H / im.height), w2 = W / s, h2 = H / s;
+      x.drawImage(im, (im.width - w2) / 2, (im.height - h2) / 2, w2, h2, dx, 0, W, H); };
+    draw(ib, 0); draw(ia, W + 12);
+    x.font = 'bold 44px -apple-system, sans-serif';
+    [['PRZED', 24], ['PO', W + 36]].forEach(([t, dx]) => { const tw = x.measureText(t).width;
+      x.fillStyle = '#000a'; x.fillRect(dx - 12, 20, tw + 24, 62); x.fillStyle = '#fff'; x.fillText(t, dx, 68); });
+    cv.toBlob(async blob => {
+      const file = new File([blob], 'przed-po.jpg', {type: 'image/jpeg'});
+      try { if (navigator.canShare && navigator.canShare({files: [file]})) return await navigator.share({files: [file], title: 'Przed i po'}); } catch(e) { return; }
+      const u = URL.createObjectURL(blob), l = document.createElement('a'); l.href = u; l.download = 'przed-po.jpg'; l.click(); setTimeout(() => URL.revokeObjectURL(u), 5000);
+    }, 'image/jpeg', 0.85);
+  };
+}
+const cmpBtn = (c, v) => (v.before || []).length && (v.after || []).length
+  ? `<span class="smsb" style="margin:0;background:#ede7f6;color:#5e35b1" data-cmp-c="${c.id}" data-cmp-v="${v.id}">🔀 Przed/po</span>` : '';
+function bindCmp(){
+  app.querySelectorAll('[data-cmp-v]').forEach(b => b.onclick = e => { e.stopPropagation();
+    const c = clients.find(x => x.id === b.dataset.cmpC), v = c && (c.visits || []).find(x => x.id === b.dataset.cmpV);
+    if (v) compareView(v, c.name + ' · ' + shortDate(v.date)); });
 }
 
 // ---------- AKTUALNOŚCI ----------
@@ -589,6 +701,7 @@ function showNews(){
   const inWeek = new Set(all.filter(x => x.v.date >= today && x.v.date <= last).map(x => x.c.id));
   const later = []; all.filter(x => x.v.date > last).forEach(x => { if (!inWeek.has(x.c.id) && !later.some(y => y.c.id === x.c.id)) later.push(x); });
   const todayL = byDay[today] || [];
+  loadWx();
   const todayMin = todayL.reduce((s, x) => s + (+x.v.dur || 0), 0);
   const due = dueList(), mk = today.slice(0, 7);
   const monthIn = clients.reduce((s, c) => s + (c.visits||[]).filter(v => v.done && v.paid && (v.paidAt || v.date).startsWith(mk)).reduce((t, v) => t + (+v.amount || 0), 0), 0);
@@ -607,7 +720,8 @@ function showNews(){
     const min = list.reduce((s, x) => s + (+x.v.dur || 0), 0);
     const name = d === today ? '📍 Dziś' : d === tom ? 'Jutro' : new Date(d + 'T12:00').toLocaleDateString('pl-PL', {weekday: 'long'}).replace(/^./, m => m.toUpperCase());
     return `<div class="row" style="margin:18px 0 8px;gap:8px"><div><h3 style="margin:0">${name}</h3>
-        <span class="muted" style="font-size:13px">${shortDate(d)} · ${list.length} ${pl(list.length, 'wizyta', 'wizyty', 'wizyt')}${min ? ' · ' + fmtDur(min) : ''}</span></div>
+        <span class="muted" style="font-size:13px">${shortDate(d)} · ${list.length} ${pl(list.length, 'wizyta', 'wizyty', 'wizyt')}${min ? ' · ' + fmtDur(min) : ''}</span>
+        ${wxDay(d) ? `<div style="font-size:13px">${wxLine(wxDay(d))}</div>${list.length ? wxWarn(wxDay(d)) : ''}` : ''}</div>
       ${addrs.length ? `<a class="smsb" style="margin:0;background:var(--g);color:#fff" href="${routeUrl(addrs)}" target="_blank" rel="noopener">🗺 Trasa${addrs.length > 1 ? ' (' + addrs.length + ')' : ''}</a>` : ''}</div>`;
   };
 
@@ -615,7 +729,11 @@ function showNews(){
       <div style="flex:1"><div class="muted">Dziś</div><b style="font-size:20px">${todayL.length} ${pl(todayL.length, 'wizyta', 'wizyty', 'wizyt')}</b>
         ${todayMin ? `<div class="muted">${fmtDur(todayMin)} pracy</div>` : ''}</div>
       <div style="flex:1;cursor:pointer" id="gopay"><div class="muted">Wpłynęło w tym miesiącu</div><b style="font-size:20px;color:var(--g)">${monthIn} zł</b>
-        <div class="muted">${due.length ? `<span style="color:#c62828">${due.length} do rozliczenia</span>` : 'Płatności'} ›</div></div></div>`;
+        <div class="muted">${due.length ? `<span style="color:#c62828">${due.length} do rozliczenia</span>` : 'Płatności'} ›</div></div></div>
+    ${wx && wx.days ? `<div class="wxs">${[0, 1, 2, 3, 4, 5, 6].map(k => { const d = addDays(today, k), w = wxDay(d); if (!w) return '';
+      const nm = k === 0 ? 'Dziś' : k === 1 ? 'Jutro' : new Date(d + 'T12:00').toLocaleDateString('pl-PL', {weekday: 'short'});
+      return `<div class="wxd ${wxBad(w) ? 'bad' : ''} ${byDay[d] ? 'vis' : ''}"><b>${nm}</b><div class="i">${wxIcon(w.c)}</div>${Math.round(w.hi)}°/${Math.round(w.lo)}°<br>💧${w.pp ?? 0}%</div>`; }).join('')}</div>
+      <p class="muted" style="margin:-2px 0 4px;font-size:11px">Pogoda: Studzionka · dane open-meteo.com · zielona ramka = dzień z wizytami</p>` : ''}`;
   if (overdue.length) html += `<h3 style="margin:18px 0 8px">⚠️ Zaległe</h3>` + overdue.map(x => card(x, 0, '#c62828')).join('');
   html += dayHead(today, todayL) + (todayL.length ? todayL.map((x, i) => card(x, i + 1, 'var(--g)')).join('') : '<p class="muted">Na dziś nic nie ma zaplanowanego.</p>');
   for (let k = 1; k <= 6; k++) { const d = addDays(today, k), l = byDay[d]; if (l) html += dayHead(d, l) + l.map((x, i) => card(x, i + 1)).join(''); }
@@ -757,8 +875,9 @@ function showTeam(){
     h.name = n.trim(); settings.helpers = hs; saveSettings(); showTeam(); });
   app.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
     const h = hs.find(x => x.id === b.dataset.del);
-    if (!confirm(`Usunąć ${h.name} z listy? Godziny w zapisanych wizytach zostaną.`)) return;
-    settings.helpers = hs.filter(x => x.id !== h.id); saveSettings(); showTeam(); });
+    const prevH = hs.slice();
+    settings.helpers = hs.filter(x => x.id !== h.id); saveSettings(); showTeam();
+    toastUndo(`Usunięto pomocnika: ${esc(h.name)}`, () => { settings.helpers = prevH; saveSettings(); }); });
 }
 
 // ---------- LISTA KLIENTÓW ----------
@@ -781,7 +900,7 @@ function showClients(){
       <p class="muted" style="margin:0;font-size:13px">Dopisuje się na końcu przypomnienia wysyłanego przyciskiem 💬 SMS.</p>
       <label style="display:block;margin-top:12px"><input type="checkbox" id="sir" style="width:auto" ${sirenOn() ? 'checked' : ''}> 🚒 Syrena po odhaczeniu wizyty</label>
       <a href="#" id="sirT" style="font-size:14px">▶ Posłuchaj</a></div>
-    <p class="muted" style="text-align:center">Zalogowano: ${esc(user.email)}</p>
+    <p class="muted" style="text-align:center">Zalogowano: ${esc(user.email)}<br><span style="font-size:12px">Wersja aplikacji: ${APP_VER}</span></p>
     <button class="btn sec" id="out">Wyloguj</button>`;
   $('so').value = cliSort;
   const draw = () => {
@@ -852,8 +971,10 @@ function bindSwipe(onOpen){
       onOpen(w.dataset.c, w.dataset.v);
     });
     w.querySelector('.swdel').onclick = () => {
-      if (!confirm('Usunąć ten wpis z historii razem ze zdjęciami?')) return close(card);
-      deleteVisit(w.dataset.c, w.dataset.v); showHistory();
+      const prev = findClient(w.dataset.c), cc = findClient(w.dataset.c); if (!cc) return;
+      const v = (cc.visits || []).find(x => x.id === w.dataset.v); if (!v) return;
+      cc.visits = cc.visits.filter(x => x.id !== v.id); saveClient(cc); showHistory();
+      toastUndo(`Usunięto wpis: ${esc(cc.name)}, ${shortDate(v.date)}`, restoreClient(prev), () => photosOf(v).forEach(delPhoto));
     };
   });
 }
@@ -879,11 +1000,12 @@ function showHistory(){
         ${hoursOf(v) ? `<div style="font-size:14px">⏱ ${fmtH(hoursOf(v))}</div>` : ''}
         ${(v.helpers || []).length ? `<div style="font-size:14px">👷 ${helpersTxt(v)}</div>` : ''}
         <div class="row" style="align-items:flex-end"><div class="photos">${[...(v.before||[]).slice(0,2), ...(v.after||[]).slice(0,2)].map(p => `<img data-pid="${p}" draggable="false">`).join('')}</div>
-          <span class="smsb" style="margin:0 0 0 auto;background:var(--g2);color:var(--g)">✏️ Edytuj</span></div></div></div>`;
+          <span style="display:flex;gap:6px;margin-left:auto">${cmpBtn(c, v)}<span class="smsb" style="margin:0;background:var(--g2);color:var(--g)">✏️ Edytuj</span></span></div></div></div>`;
     });
     $('list').innerHTML = html || '<p class="muted">Brak wykonanych prac.</p>';
     loadImgs();
     bindSwipe((cid, vid) => editVisit(cid, vid, showHistory));
+    bindCmp();
   };
   draw();
   $('q').oninput = draw;
@@ -920,7 +1042,8 @@ function showClient(id){
       ${(v.helpers || []).length ? `<div style="font-size:14px">👷 ${helpersTxt(v)}</div>`
         : !v.done && (v.team || []).length ? `<div style="font-size:14px">👷 Pomaga: ${teamTxt(v)}</div>` : ''}
       ${v.amount != null ? `<div>${v.amount} zł – ${v.paid ? '✅ zapłacone' : '❌ niezapłacone'}</div>` : ''}
-      <div class="photos">${[...(v.before||[]).slice(0,2), ...(v.after||[]).slice(0,2)].map(p => `<img data-pid="${p}">`).join('')}</div>${quickBtns(c, v)}</div>`).join('')
+      <div class="photos">${[...(v.before||[]).slice(0,2), ...(v.after||[]).slice(0,2)].map(p => `<img data-pid="${p}">`).join('')}</div>
+      ${cmpBtn(c, v) ? `<div style="margin-top:6px">${cmpBtn(c, v)}</div>` : ''}${quickBtns(c, v)}</div>`).join('')
       || '<p class="muted">Brak wizyt.</p>'}`;
   loadImgs();
   $('ed').onclick = () => editClient(id);
@@ -941,10 +1064,11 @@ function showClient(id){
       mm.text = t; mm.edited = true; saveClient(cc); showClient(id); };
   });
   app.querySelectorAll('[data-dl]').forEach(b => b.onclick = () => {
-    if (!confirm('Usunąć tę notatkę?')) return;
-    const cc = findClient(id); cc.log = (cc.log || []).filter(m => m.id !== b.dataset.dl); saveClient(cc); showClient(id); });
+    const prev = findClient(id), cc = findClient(id); cc.log = (cc.log || []).filter(m => m.id !== b.dataset.dl); saveClient(cc); showClient(id);
+    toastUndo('Usunięto notatkę', restoreClient(prev)); });
   $('nv').onclick = () => editVisit(id, null, () => showClient(id));
   app.querySelectorAll('[data-v]').forEach(e => e.onclick = () => editVisit(id, e.dataset.v, () => showClient(id)));
+  bindCmp();
   bindQuick();
 }
 
@@ -1007,6 +1131,7 @@ function editVisit(cid, vid, back){
     <label>Kwota za tę wizytę (zł)</label><input id="am" type="text" inputmode="decimal" autocomplete="off" value="${v.amount ?? c.price ?? ''}">
     <label><input type="checkbox" id="pd" style="width:auto" ${v.paid ? 'checked' : ''}> Zapłacone</label><br><br>
     ${v.paid ? `<label>Data zapłaty</label><input id="pdt" type="date" value="${v.paidAt || v.date}">` : ''}
+    ${v.before.length && v.after.length ? `<button class="btn" style="background:#5e35b1" id="cmpv">🔀 Porównaj przed / po</button><br>` : ''}
     <label>Zdjęcia PRZED</label><div class="photos">${ph('before')}</div>
     <button class="btn sec" id="ab">📷 Dodaj zdjęcia przed</button><br>
     <label>Zdjęcia PO</label><div class="photos">${ph('after')}</div>
@@ -1034,6 +1159,7 @@ function editVisit(cid, vid, back){
       i.onchange = async () => { for (const f of i.files) { const id = newId(); await putPhoto(id, await shrink(f)); v[k].push(id); added.push(id); } draw(); };
       i.click(); };
     $('ab').onclick = () => add('before'); $('aa').onclick = () => add('after');
+    if ($('cmpv')) $('cmpv').onclick = () => { keep(); compareView(v, c.name + ' · ' + shortDate(v.date)); };
     app.querySelectorAll('.photos img').forEach(im => im.onclick = () => { keep();
       const w = document.createElement('div');
       w.style.cssText = 'position:fixed;inset:0;background:#000e;z-index:9;display:flex;flex-direction:column;justify-content:center;padding:20px';
@@ -1054,8 +1180,11 @@ function editVisit(cid, vid, back){
     if ($('cx')) $('cx').onclick = () => {
       if (v.cancelled) { keep(); v.cancelled = false; saveNow(); return back(); }
       saveNow(); cancelDialog(c.id, v.id, back); };
-    if (!isNew) $('d').onclick = () => { if (confirm('Usunąć wizytę i jej zdjęcia?')) {
-      c.visits = c.visits.filter(x => x.id !== v.id); [...v.before, ...v.after, ...removed].forEach(delPhoto); saveClient(c); back(); } };
+    if (!isNew) $('d').onclick = () => {
+      const prev = findClient(c.id); added.forEach(delPhoto); added.length = 0;
+      c.visits = c.visits.filter(x => x.id !== v.id); saveClient(c); back();
+      const gone = [...photosOf(prev.visits.find(x => x.id === v.id) || {}), ...removed];
+      toastUndo(`Usunięto wizytę z ${shortDate(v.date)}`, restoreClient(prev), () => gone.forEach(delPhoto)); };
   };
   draw();
 }
