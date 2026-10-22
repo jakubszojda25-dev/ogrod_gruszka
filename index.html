@@ -38,6 +38,9 @@ nav button.on{background:var(--g);color:#fff;font-weight:700}
 .muted{color:#6b8a6e;font-size:14px}
 .row{display:flex;justify-content:space-between;align-items:center}
 a{color:var(--g);font-weight:600}
+.sw{position:relative;margin-bottom:10px;border-radius:14px;overflow:hidden}
+.sw .swc{margin:0;position:relative;transition:transform .2s ease;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.swdel{position:absolute;right:0;top:0;bottom:0;width:96px;background:#c62828;color:#fff;border:none;font-size:15px;font-weight:700;font-family:inherit}
 .qrow{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:8px}
 .qk{width:48px;height:48px;border-radius:50%;border:2px solid;background:#fff;font-size:24px;font-weight:700;line-height:1;padding:0;font-family:inherit;display:inline-flex;align-items:center;justify-content:center}
 .qk.ok{border-color:var(--g);color:var(--g)}.qk.ok:active{background:var(--g);color:#fff}
@@ -344,29 +347,52 @@ function showClients(){
 }
 
 // ---------- HISTORIA PRAC ----------
+function deleteVisit(cid, vid){
+  const c = findClient(cid); if (!c) return;
+  const v = (c.visits||[]).find(x => x.id === vid); if (!v) return;
+  [...(v.before||[]), ...(v.after||[])].forEach(delPhoto);
+  c.visits = c.visits.filter(x => x.id !== vid); saveClient(c);
+}
+function bindSwipe(onOpen){
+  let openEl = null;
+  const close = el => { if (el) { el.style.transform = ''; if (openEl === el) openEl = null; } };
+  app.querySelectorAll('.sw').forEach(w => {
+    const card = w.querySelector('.swc');
+    let x0 = 0, y0 = 0, dx = 0, drag = false, moved = false, startOpen = false;
+    card.addEventListener('pointerdown', e => {
+      x0 = e.clientX; y0 = e.clientY; dx = 0; drag = true; moved = false; startOpen = openEl === card;
+      if (openEl && openEl !== card) close(openEl);
+      card.style.transition = 'none';
+    });
+    card.addEventListener('pointermove', e => {
+      if (!drag) return;
+      const mx = e.clientX - x0, my = e.clientY - y0;
+      if (!moved && Math.abs(mx) < 8) return;
+      if (!moved && Math.abs(my) > Math.abs(mx)) { drag = false; return; }
+      moved = true; dx = Math.max(-110, Math.min(0, mx + (startOpen ? -96 : 0)));
+      card.style.transform = `translateX(${dx}px)`;
+    });
+    const end = () => {
+      if (!drag) return; drag = false; card.style.transition = '';
+      if (!moved) return;
+      if (dx < -48) { card.style.transform = 'translateX(-96px)'; openEl = card; } else close(card);
+    };
+    card.addEventListener('pointerup', end); card.addEventListener('pointercancel', end);
+    card.addEventListener('click', () => {
+      if (moved) { moved = false; return; }
+      if (openEl) { close(openEl); return; }
+      onOpen(w.dataset.c, w.dataset.v);
+    });
+    w.querySelector('.swdel').onclick = () => {
+      if (!confirm('Usunąć ten wpis z historii razem ze zdjęciami?')) return close(card);
+      deleteVisit(w.dataset.c, w.dataset.v); showHistory();
+    };
+  });
+}
 function showHistory(){
   view = showHistory; tab('his'); head('Historia prac');
-  app.innerHTML = `<input id="q" placeholder="🔍 Szukaj: klient, adres, opis"><div id="list"></div>
-    <div class="card" style="margin-top:24px"><b>🗑 Czyszczenie historii</b>
-      <select id="clr"><option value="365">Usuń prace starsze niż 1 rok</option><option value="180">Usuń prace starsze niż pół roku</option>
-        <option value="90">Usuń prace starsze niż 3 miesiące</option><option value="0">Usuń całą historię</option></select>
-      <label><input type="checkbox" id="clrc" style="width:auto" checked> Usuń też anulowane zlecenia</label>
-      <p class="muted">Klienci zostają. Usuwane są tylko wykonane prace (razem ze zdjęciami), więc znikną też ich niezapłacone kwoty.</p>
-      <button class="btn del" id="clrb">Wyczyść historię</button></div>`;
-  $('clrb').onclick = () => {
-    const days = +$('clr').value, lim = days ? addDays(ymd(new Date()), -days) : '9999-12-31', withC = $('clrc').checked;
-    const gone = v => v.date < lim && (v.done || (withC && v.cancelled));
-    const n = clients.reduce((s, c) => s + (c.visits||[]).filter(gone).length, 0);
-    if (!n) return alert('Nie ma nic do usunięcia.');
-    if (!confirm(`Usunąć ${n} wpisów z historii razem ze zdjęciami? Tego nie da się cofnąć.`)) return;
-    if (!days && !confirm('Na pewno usunąć CAŁĄ historię?')) return;
-    clients.map(c => structuredClone(c)).forEach(c => {
-      const del = (c.visits||[]).filter(gone); if (!del.length) return;
-      del.forEach(v => [...(v.before||[]), ...(v.after||[])].forEach(delPhoto));
-      c.visits = c.visits.filter(v => !gone(v)); saveClient(c);
-    });
-    showHistory();
-  };
+  app.innerHTML = `<input id="q" placeholder="🔍 Szukaj: klient, adres, opis">
+    <p class="muted" style="margin:0 0 4px">Przesuń wpis w lewo, żeby go usunąć.</p><div id="list"></div>`;
   const draw = () => {
     const f = $('q').value.toLowerCase(), all = [];
     clients.forEach(c => (c.visits||[]).forEach(v => {
@@ -377,15 +403,16 @@ function showHistory(){
     all.forEach(({c, v}) => {
       const m = new Date(v.date + 'T12:00').toLocaleDateString('pl-PL', {month: 'long', year: 'numeric'});
       if (m !== mon) { mon = m; html += `<h3 style="margin:16px 0 8px">${m}</h3>`; }
-      html += `<div class="card" data-c="${c.id}" data-v="${v.id}">
+      html += `<div class="sw" data-c="${c.id}" data-v="${v.id}"><button class="swdel">🗑<br>Usuń</button>
+        <div class="card swc">
         <div class="row"><b>${esc(c.name)}</b><span class="muted">${shortDate(v.date)}</span></div>
         <div class="muted">${esc(c.address)}</div>${v.desc ? `<div>${esc(v.desc)}</div>` : ''}
         ${v.amount != null ? `<div style="font-size:14px">${v.amount} zł – ${v.paid ? '✅ zapłacone' : '❌ niezapłacone'}</div>` : ''}
-        <div class="photos">${[...(v.before||[]).slice(0,2), ...(v.after||[]).slice(0,2)].map(p => `<img data-pid="${p}">`).join('')}</div></div>`;
+        <div class="photos">${[...(v.before||[]).slice(0,2), ...(v.after||[]).slice(0,2)].map(p => `<img data-pid="${p}" draggable="false">`).join('')}</div></div></div>`;
     });
     $('list').innerHTML = html || '<p class="muted">Brak wykonanych prac.</p>';
     loadImgs();
-    app.querySelectorAll('[data-v]').forEach(e => e.onclick = () => editVisit(e.dataset.c, e.dataset.v, showHistory));
+    bindSwipe((cid, vid) => editVisit(cid, vid, showHistory));
   };
   draw();
   $('q').oninput = draw;
