@@ -154,28 +154,108 @@ function setVisit(cid, vid, act){
 const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const getSig = () => { try { return localStorage.getItem('gruszka-sig') || ''; } catch(e) { return ''; } };
 const setSig = t => { try { localStorage.setItem('gruszka-sig', t); } catch(e) {} };
-function smsText(v){
+const whenPl = (d, time) => {
   const t = ymd(new Date());
-  const when = v.date === t ? 'dziś' : v.date === addDays(t, 1) ? 'jutro'
-    : new Date(v.date + 'T12:00').toLocaleDateString('pl-PL', {weekday: 'long', day: 'numeric', month: 'long'});
-  const sig = getSig();
-  return `Dzień dobry, przypominam o wizycie ${v.date === t || v.date === addDays(t, 1) ? when : 'w ' + when}${v.time ? ' o godz. ' + v.time : ''}${v.desc ? ' (' + v.desc + ')' : ''}. W razie zmian proszę o kontakt.${sig ? ' ' + sig : ''}`;
-}
+  const w = d === t ? 'dziś' : d === addDays(t, 1) ? 'jutro'
+    : 'w ' + new Date(d + 'T12:00').toLocaleDateString('pl-PL', {weekday: 'long', day: 'numeric', month: 'long'});
+  return w + (time ? ' o godz. ' + time : '');
+};
+const withSig = txt => { const sig = getSig(); return txt + (sig ? ' ' + sig : ''); };
+const smsText = v => withSig(`Dzień dobry, przypominam o wizycie ${whenPl(v.date, v.time)}${v.desc ? ' (' + v.desc + ')' : ''}. W razie zmian proszę o kontakt.`);
+const smsHref = (c, txt) => { const num = (c.phone || '').replace(/[^0-9+]/g, ''); return num ? `sms:${num}${isIOS ? '&' : '?'}body=${encodeURIComponent(txt)}` : ''; };
 const smsBtn = (c, v) => {
-  const num = (c.phone || '').replace(/[^0-9+]/g, ''); if (!num) return '';
-  return `<a class="smsb" href="sms:${num}${isIOS ? '&' : '?'}body=${encodeURIComponent(smsText(v))}" onclick="event.stopPropagation()">💬 SMS</a>`;
+  const h = smsHref(c, smsText(v)); if (!h) return '';
+  return `<a class="smsb" href="${h}" onclick="event.stopPropagation()">💬 SMS</a>`;
 };
 const quickBtns = (c, v) => (v.done || v.cancelled) ? '' : `<div class="qrow">${smsBtn(c, v)}<span class="muted" style="font-size:13px">Odbyła się?</span>
   <button class="qk ok" title="Odbyła się" data-act="done" data-c="${c.id}" data-vid="${v.id}">✓</button>
-  <button class="qk no" title="Nie odbyła się – anuluj" data-act="cancel" data-c="${c.id}" data-vid="${v.id}">✕</button></div>`;
+  <button class="qk no" title="Przenieś lub odwołaj" data-act="cancel" data-c="${c.id}" data-vid="${v.id}">✕</button></div>`;
 function bindQuick(){
   app.querySelectorAll('[data-act]').forEach(b => b.onclick = e => {
     e.stopPropagation();
     const {act, c, vid} = b.dataset;
-    if (act === 'cancel' && !confirm('Anulować to zlecenie? Zniknie z kalendarza i przypomnień.')) return;
+    if (act === 'cancel') return changeSheet(c, vid);
     if (act === 'done') return doneDialog(c, vid);
     setVisit(c, vid, act);
   });
+}
+
+// ---------- dźwięk syreny po odhaczeniu ----------
+const sirenOn = () => { try { return localStorage.getItem('gruszka-siren') !== '0'; } catch(e) { return true; } };
+const setSiren = on => { try { localStorage.setItem('gruszka-siren', on ? '1' : '0'); } catch(e) {} };
+function playSiren(){
+  if (!sirenOn()) return;
+  try {
+    const A = window.AudioContext || window.webkitAudioContext; if (!A) return;
+    const ctx = new A(), t0 = ctx.currentTime, len = 1.8;
+    const osc = ctx.createOscillator(), lp = ctx.createBiquadFilter(), g = ctx.createGain();
+    osc.type = 'square'; lp.type = 'lowpass'; lp.frequency.value = 1800;
+    for (let i = 0; i < 4; i++) osc.frequency.setValueAtTime(i % 2 ? 622 : 466, t0 + i * 0.45);   // „i-u, i-u” jak wóz strażacki
+    g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(0.18, t0 + 0.05);
+    g.gain.setValueAtTime(0.18, t0 + len - 0.25); g.gain.linearRampToValueAtTime(0, t0 + len);
+    osc.connect(lp); lp.connect(g); g.connect(ctx.destination);
+    osc.start(t0); osc.stop(t0 + len + 0.05); osc.onended = () => ctx.close();
+    navigator.vibrate?.(200);
+  } catch(e) {}
+}
+
+// ---------- przeniesienie / odwołanie wizyty ----------
+function sheet(html){
+  const w = document.createElement('div'); w.className = 'modal';
+  w.innerHTML = `<div class="sheet">${html}</div>`;
+  w.onclick = e => { if (e.target === w) w.remove(); };
+  document.body.appendChild(w);
+  return [w, id => w.querySelector('#' + id)];
+}
+const afterDefault = () => { if (view) view(); };
+function changeSheet(cid, vid, after = afterDefault){
+  const c = findClient(cid); if (!c) return;
+  const v = (c.visits||[]).find(x => x.id === vid); if (!v) return;
+  const [w, q] = sheet(`<h3 style="margin-top:0">${esc(c.name)}</h3>
+    <p class="muted" style="margin-top:-8px">Wizyta: ${shortDate(v.date)}${v.time ? ', ' + v.time : ''}${v.desc ? ' – ' + esc(v.desc) : ''}</p>
+    <button class="btn" id="chM">📅 Przenieś na inny termin</button>
+    <button class="btn del" id="chO">✕ Odwołaj wizytę</button>
+    <button class="btn sec" id="chC">Wróć</button>`);
+  q('chC').onclick = () => w.remove();
+  q('chM').onclick = () => { w.remove(); moveDialog(cid, vid, after); };
+  q('chO').onclick = () => { w.remove(); cancelDialog(cid, vid, after); };
+}
+function moveDialog(cid, vid, after = afterDefault){
+  const c = findClient(cid); if (!c) return;
+  const v = (c.visits||[]).find(x => x.id === vid); if (!v) return;
+  const [w, q] = sheet(`<h3 style="margin-top:0">📅 Przenieś wizytę</h3>
+    <p class="muted" style="margin-top:-8px">${esc(c.name)} · teraz: ${shortDate(v.date)}${v.time ? ', ' + v.time : ''}</p>
+    <label>Nowa data</label><input id="mvd" type="date" value="${v.date}">
+    ${timeFields('mv', v)}
+    ${c.phone ? '<label><input type="checkbox" id="mvs" style="width:auto" checked> Wyślij klientowi SMS o nowym terminie</label><br><br>' : ''}
+    <button class="btn" id="mvS">Przenieś</button><button class="btn sec" id="mvC">Wróć</button>`);
+  q('mvC').onclick = () => w.remove();
+  q('mvS').onclick = () => {
+    const nd = q('mvd').value; if (!nd) return alert('Wybierz nową datę');
+    const old = {d: v.date, t: v.time};
+    v.movedFrom = v.date; v.date = nd; v.time = q('mvt').value; v.dur = +q('mvu').value || null;
+    saveClient(c); w.remove(); selDay = nd;
+    const sms = q('mvs') && q('mvs').checked;
+    after();
+    if (sms) location.href = smsHref(c, withSig(`Dzień dobry, wizyta zaplanowana ${whenPl(old.d, old.t)} zostaje przeniesiona – nowy termin: ${whenPl(nd, v.time)}. Przepraszam za zmianę.`));
+  };
+}
+function cancelDialog(cid, vid, after = afterDefault){
+  const c = findClient(cid); if (!c) return;
+  const v = (c.visits||[]).find(x => x.id === vid); if (!v) return;
+  const [w, q] = sheet(`<h3 style="margin-top:0">✕ Odwołać wizytę?</h3>
+    <p class="muted" style="margin-top:-8px">${esc(c.name)} · ${shortDate(v.date)}${v.time ? ', ' + v.time : ''}</p>
+    <label>Powód (tylko dla Ciebie, opcjonalnie)</label><input id="cxr" placeholder="np. deszcz, klient wyjechał">
+    ${c.phone ? '<label><input type="checkbox" id="cxs" style="width:auto" checked> Wyślij klientowi SMS o odwołaniu</label><br><br>' : ''}
+    <button class="btn del" id="cxS">✕ Odwołaj wizytę</button><button class="btn sec" id="cxC">Wróć</button>`);
+  q('cxC').onclick = () => w.remove();
+  q('cxS').onclick = () => {
+    v.cancelled = true; v.done = false; v.cancelReason = q('cxr').value.trim();
+    saveClient(c); w.remove();
+    const sms = q('cxs') && q('cxs').checked;
+    after();
+    if (sms) location.href = smsHref(c, withSig(`Dzień dobry, niestety muszę odwołać wizytę zaplanowaną ${whenPl(v.date, v.time)}. Odezwę się w sprawie nowego terminu.`));
+  };
 }
 
 // ---------- wizyty cykliczne ----------
@@ -240,6 +320,7 @@ function doneDialog(cid, vid){
     if (k === '' || isNaN(+k)) { alert('Wpisz kwotę (może być 0).'); return q('mdK').focus(); }
     v.amount = +k; v.paid = true; v.paidAt = ymd(new Date());
     addNext(c, v, plan);
+    playSiren();
     saveClient(c); w.remove(); if (view) view();
   };
 }
@@ -386,7 +467,7 @@ function showCal(){
   const dayMin = dayList.filter(x => !x.v.done).reduce((s, x) => s + (+x.v.dur || 0), 0);
   const list = (dayMin ? `<p class="muted">Zaplanowany czas pracy: <b>${fmtDur(dayMin)}</b></p>` : '') + (dayList.map(({c, v}) => `<div class="card" data-c="${c.id}" data-v="${v.id}">
     <div class="row"><b>${esc(c.name)}</b><span>${v.done ? '✅' : '⏳'}</span></div>
-    ${whenTxt(v) ? `<div style="font-size:14px;font-weight:600">${whenTxt(v)}</div>` : ''}
+    ${whenTxt(v) ? `<div style="font-size:14px;font-weight:600">${whenTxt(v)}</div>` : ''}${v.movedFrom && !v.done ? `<span class="tag orange">↪ przeniesiona z ${shortDate(v.movedFrom)}</span>` : ''}
     <div class="muted">${esc(c.address)}</div>${v.desc ? `<div>${esc(v.desc)}</div>` : ''}${quickBtns(c, v)}</div>`).join('')
     || '<p class="muted">Brak wizyt tego dnia.</p>');
   reminders();
@@ -436,7 +517,7 @@ function showNews(){
     if (gg !== g) { g = gg; html += `<h3 style="margin:16px 0 8px">${gg}</h3>`; }
     html += `<div class="card" data-c="${c.id}" data-v="${v.id}" style="${v.date < today ? 'border-left:5px solid #c62828' : v.date === today ? 'border-left:5px solid var(--g)' : ''}">
       <div class="row"><b>${esc(c.name)}</b><span class="muted">${shortDate(v.date)}</span></div>
-      ${whenTxt(v) ? `<div style="font-size:14px;font-weight:600">${whenTxt(v)}</div>` : ''}
+      ${whenTxt(v) ? `<div style="font-size:14px;font-weight:600">${whenTxt(v)}</div>` : ''}${v.movedFrom && !v.done ? `<span class="tag orange">↪ przeniesiona z ${shortDate(v.movedFrom)}</span>` : ''}
       ${v.desc ? `<div>🔧 ${esc(v.desc)}</div>` : ''}
       <div style="font-size:14px;margin-top:4px">${c.address ? `📍 <a href="https://maps.apple.com/?q=${encodeURIComponent(c.address)}" onclick="event.stopPropagation()">${esc(c.address)}</a>` : ''}
       ${c.phone ? `${c.address ? ' · ' : ''}📞 <a href="tel:${esc(c.phone)}" onclick="event.stopPropagation()">Zadzwoń</a>` : ''}</div>
@@ -530,7 +611,7 @@ function showPay(){
       <div class="stat"><span class="muted">Płatności</span><b>${paid.length}</b></div></div>
     <div style="display:flex;gap:8px;margin-bottom:8px">
       <div class="stat"><span class="muted">Czas pracy</span><b>${mins ? fmtDur(mins) : '–'}</b></div>
-      <div class="stat"><span class="muted">Anulowane wizyty</span><b>${cancelled.length}</b></div></div>
+      <div class="stat"><span class="muted">Odwołane wizyty</span><b>${cancelled.length}</b></div></div>
     ${noAmount ? `<p style="color:#c62828;font-size:14px">⚠️ ${noAmount} ${pl(noAmount, 'płatność nie ma', 'płatności nie mają', 'płatności nie ma')} wpisanej kwoty, więc nie liczą się do sumy. Stuknij ją i wpisz kwotę.</p>` : ''}
     ${top.length ? `<h3>Klienci w tym miesiącu</h3>${top.map(x => `<div class="card row" data-id="${x.c.id}">
       <span><b>${esc(x.c.name)}</b><br><span class="muted">${x.n} ${pl(x.n, 'płatność', 'płatności', 'płatności')}</span></span><b>${x.s} zł</b></div>`).join('')}` : ''}
@@ -561,7 +642,9 @@ function showClients(){
     <button class="btn" id="add">+ Nowy klient</button><br><div id="list"></div>
     <div class="card" style="margin-top:20px"><label>💬 Podpis w SMS do klientów</label>
       <input id="sig" placeholder="np. Pozdrawiam, Marek – usługi ogrodnicze" value="${esc(getSig())}">
-      <p class="muted" style="margin:0;font-size:13px">Dopisuje się na końcu przypomnienia wysyłanego przyciskiem 💬 SMS.</p></div>
+      <p class="muted" style="margin:0;font-size:13px">Dopisuje się na końcu przypomnienia wysyłanego przyciskiem 💬 SMS.</p>
+      <label style="display:block;margin-top:12px"><input type="checkbox" id="sir" style="width:auto" ${sirenOn() ? 'checked' : ''}> 🚒 Syrena po odhaczeniu wizyty</label>
+      <a href="#" id="sirT" style="font-size:14px">▶ Posłuchaj</a></div>
     <p class="muted" style="text-align:center">Zalogowano: ${esc(user.email)}</p>
     <button class="btn sec" id="out">Wyloguj</button>`;
   $('so').value = cliSort;
@@ -572,7 +655,7 @@ function showClients(){
     if (cliSort === 'az') cs.sort((a, b) => a.c.name.localeCompare(b.c.name, 'pl'));
     else { const k = x => x.l ? x.l.date : ''; cs.sort((a, b) => cliSort === 'old' ? k(a).localeCompare(k(b)) : k(b).localeCompare(k(a))); }
     $('list').innerHTML = cs.map(({c, l, n}) => `<div class="card" data-id="${c.id}"><b>${esc(c.name)}</b>
-      <div class="muted">${esc(c.address)}${c.phone ? ' · ' + esc(c.phone) : ''}</div>
+      <div class="muted">${[esc(c.address), esc(c.phone)].filter(Boolean).join(' · ')}</div>
       <div style="margin-top:6px;font-size:14px">✅ Ostatnio wykonano: ${l ? `<b>${shortDate(l.date)}</b>${l.desc ? ' – ' + esc(l.desc.slice(0, 60)) + (l.desc.length > 60 ? '…' : '') : ''}` : '<span class="muted">jeszcze nic</span>'}</div>
       ${n ? `<div style="font-size:14px">${n.date < ymd(new Date()) ? '⚠️ Zaległa' : '⏳ Następna'}: <b>${shortDate(n.date)}${n.time ? ', ' + n.time : ''}</b>${n.dur ? ' (' + fmtDur(n.dur) + ')' : ''}</div>${quickBtns(c, n)}` : ''}</div>`).join('')
       || '<p class="muted">Brak klientów.</p>';
@@ -583,6 +666,8 @@ function showClients(){
   $('q').oninput = draw;
   $('so').onchange = e => { cliSort = e.target.value; draw(); };
   $('sig').oninput = e => setSig(e.target.value.trim());
+  $('sir').onchange = e => setSiren(e.target.checked);
+  $('sirT').onclick = e => { e.preventDefault(); const was = sirenOn(); setSiren(true); playSiren(); setSiren(was); };
   $('add').onclick = () => editClient(null);
   $('out').onclick = () => { if (confirm('Wylogować?')) signOut(auth); };
 }
@@ -672,7 +757,7 @@ function showClient(id){
     ${c.notes ? `<p class="muted">${esc(c.notes)}</p>` : ''}
     <button class="btn sec" id="ed">✏️ Edytuj dane i cenę</button></div>
     <button class="btn" id="nv">+ Dodaj wizytę / termin</button><h3>Historia wizyt</h3>
-    ${vs.map(v => `<div class="card" data-v="${v.id}" style="${v.cancelled ? 'opacity:.55' : ''}"><div class="row"><b>${plDate(v.date)}</b><span>${v.done ? '✅ Zrobione' : v.cancelled ? '🚫 Anulowane' : '⏳ Zaplanowane'}</span></div>
+    ${vs.map(v => `<div class="card" data-v="${v.id}" style="${v.cancelled ? 'opacity:.55' : ''}"><div class="row"><b>${plDate(v.date)}</b><span>${v.done ? '✅ Zrobione' : v.cancelled ? '🚫 Odwołana' : '⏳ Zaplanowane'}</span></div>
       ${whenTxt(v) ? `<div style="font-size:14px">${whenTxt(v)}</div>` : ''}
       ${v.desc ? `<div>${esc(v.desc)}</div>` : ''}
       ${v.amount != null ? `<div>${v.amount} zł – ${v.paid ? '✅ zapłacone' : '❌ niezapłacone'}</div>` : ''}
@@ -753,9 +838,11 @@ function editVisit(cid, vid, back){
     <button class="btn sec" id="aa">📷 Dodaj zdjęcia po</button><br>
     <label>Następna wizyta (opcjonalnie)</label><input id="nx" type="date">
     ${timeFields('nx', {})}
-    ${v.cancelled ? '<p style="color:#c62828;font-weight:600">🚫 To zlecenie jest anulowane.</p>' : ''}
+    ${v.cancelled ? `<p style="color:#c62828;font-weight:600">🚫 Ta wizyta jest odwołana.${v.cancelReason ? ' Powód: ' + esc(v.cancelReason) : ''}</p>` : ''}
+    ${v.movedFrom && !v.done && !v.cancelled ? `<p class="muted">↪ Przeniesiona z ${shortDate(v.movedFrom)}</p>` : ''}
     <button class="btn" id="s">Zapisz</button>
-    ${isNew || v.done ? '' : v.cancelled ? '<button class="btn sec" id="cx">↩️ Przywróć zlecenie</button>' : '<button class="btn del" id="cx">✖ Anuluj zlecenie</button>'}
+    ${isNew || v.done ? '' : v.cancelled ? '<button class="btn sec" id="cx">↩️ Przywróć wizytę</button>'
+      : '<div style="display:flex;gap:8px"><button class="btn sec" id="mv">📅 Przenieś</button><button class="btn del" id="cx">✕ Odwołaj</button></div>'}
     ${isNew ? '' : '<button class="btn del" id="d">🗑 Usuń wizytę</button>'}</div>
     <p class="muted">Dotknij zdjęcia, aby je powiększyć lub usunąć.</p>`;
     loadImgs();
@@ -779,11 +866,12 @@ function editVisit(cid, vid, back){
       if (nx) c.visits.push({id: newId(), date: nx, time: $('nxt').value, dur: +$('nxu').value || null, done: false, desc: '',
         remind: 1, amount: null, paid: false, before: [], after: []});
       removed.forEach(delPhoto); saveClient(c); back(); };
+    const saveNow = () => { keep(); const i = c.visits.findIndex(x => x.id === v.id); if (i >= 0) c.visits[i] = v;
+      removed.forEach(delPhoto); removed.length = 0; added.length = 0; saveClient(c); };
+    if ($('mv')) $('mv').onclick = () => { saveNow(); moveDialog(c.id, v.id, back); };
     if ($('cx')) $('cx').onclick = () => {
-      if (!v.cancelled && !confirm('Anulować to zlecenie? Zniknie z kalendarza i przypomnień.')) return;
-      keep(); v.cancelled = !v.cancelled; if (v.cancelled) v.done = false;
-      const i = c.visits.findIndex(x => x.id === v.id); if (i >= 0) c.visits[i] = v;
-      removed.forEach(delPhoto); saveClient(c); back(); };
+      if (v.cancelled) { keep(); v.cancelled = false; saveNow(); return back(); }
+      saveNow(); cancelDialog(c.id, v.id, back); };
     if (!isNew) $('d').onclick = () => { if (confirm('Usunąć wizytę i jej zdjęcia?')) {
       c.visits = c.visits.filter(x => x.id !== v.id); [...v.before, ...v.after, ...removed].forEach(delPhoto); saveClient(c); back(); } };
   };
