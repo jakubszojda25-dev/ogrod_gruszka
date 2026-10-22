@@ -51,7 +51,8 @@ nav .ic{font-size:19px;line-height:1.1}
 .bub{align-self:flex-start;max-width:88%;background:var(--g2);border-radius:16px 16px 16px 4px;padding:8px 12px;position:relative}
 .bub.me{align-self:flex-end;background:var(--g);color:#fff;border-radius:16px 16px 4px 16px}
 .bub .meta{font-size:11px;opacity:.7;margin-top:3px;display:flex;gap:10px;justify-content:space-between;align-items:center}
-.bub .x{background:none;border:none;color:inherit;opacity:.8;font-size:15px;padding:0 0 0 6px;font-family:inherit}
+.bub .x{background:none;border:none;color:inherit;opacity:.8;font-size:15px;padding:0 0 0 8px;font-family:inherit}
+.bub textarea{margin:4px 0;color:#1b3a1d;min-width:220px}
 .chatin{display:flex;gap:8px;align-items:flex-end}.chatin textarea{margin:0;min-height:44px;resize:none}
 .chatin button{flex:none;width:48px;height:44px;border:none;border-radius:12px;background:var(--g);color:#fff;font-size:20px}
 .sheet{background:#fff;width:100%;max-width:600px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:16px 16px calc(18px + env(safe-area-inset-bottom))}
@@ -890,7 +891,7 @@ function showHistory(){
 // ---------- KARTA KLIENTA ----------
 function showClient(id){
   const c = findClient(id); if (!c) return showClients();
-  view = () => showClient(id); head(c.name, showClients);
+  view = () => { if (app.querySelector('.bub textarea')) return; showClient(id); }; head(c.name, showClients);
   const vs = (c.visits||[]).slice().sort((a, b) => b.date.localeCompare(a.date));
   app.innerHTML = `<div class="card"><b>${esc(c.name)}</b><br>
     ${c.address ? `📍 <a href="${navUrl(c.address)}" target="_blank" rel="noopener">${esc(c.address)}</a><br>` : ''}
@@ -904,10 +905,10 @@ function showClient(id){
       <div class="stat" style="padding:8px"><span class="muted" style="font-size:13px">Czas pracy</span><b style="font-size:18px">${fmtH(st.h)}</b></div>
       <div class="stat" style="padding:8px"><span class="muted" style="font-size:13px">Zapłacono</span><b style="font-size:18px">${st.z} zł</b></div></div>` : ''; })()}
     <h3 style="margin-bottom:6px">💬 Notatki</h3>
-    <div class="card"><div class="chat" id="chat">${(c.log || []).length ? c.log.map(m => `<div class="bub ${m.kind === 'note' ? 'me' : ''}">
-        <div style="white-space:pre-wrap">${KIND[m.kind] || ''}${esc(m.text)}</div>
-        <div class="meta"><span>${new Date(m.ts).toLocaleString('pl-PL', {day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'})}</span>
-        <button class="x" data-dl="${m.id}" title="Usuń">🗑</button></div></div>`).join('')
+    <div class="card"><div class="chat" id="chat">${(c.log || []).length ? c.log.map(m => `<div class="bub ${m.kind === 'note' ? 'me' : ''}" data-mid="${m.id}">
+        <div class="btxt" style="white-space:pre-wrap">${KIND[m.kind] || ''}${esc(m.text)}</div>
+        <div class="meta"><span>${new Date(m.ts).toLocaleString('pl-PL', {day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'})}${m.edited ? ' · edytowano' : ''}</span>
+        <span style="white-space:nowrap"><button class="x" data-ed="${m.id}" title="Edytuj">✏️</button><button class="x" data-dl="${m.id}" title="Usuń">🗑</button></span></div></div>`).join('')
         : '<p class="muted" style="margin:0">Brak notatek. Napisz coś poniżej – opisy prac, przeniesienia i odwołania też zapiszą się tutaj.</p>'}</div>
       <div class="chatin"><textarea id="msg" rows="1" placeholder="Napisz notatkę…">${esc(chatDraft[c.id] || '')}</textarea><button id="send" title="Zapisz">➤</button></div></div>
     <button class="btn" id="nv">+ Dodaj wizytę / termin</button><h3>Historia wizyt</h3>
@@ -926,6 +927,18 @@ function showClient(id){
   $('msg').oninput = e => { chatDraft[id] = e.target.value; e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 140) + 'px'; };
   $('send').onclick = () => { const t = $('msg').value.trim(); if (!t) return;
     chatDraft[id] = ''; const cc = findClient(id); logAdd(cc, t, 'note'); saveClient(cc); showClient(id); };
+  app.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => {
+    const bub = app.querySelector(`[data-mid="${b.dataset.ed}"]`), m = (c.log || []).find(x => x.id === b.dataset.ed); if (!bub || !m) return;
+    bub.innerHTML = `<textarea rows="3">${esc(m.text)}</textarea>
+      <div style="display:flex;gap:6px;justify-content:flex-end"><button class="btn sec" style="width:auto;margin:0;padding:6px 12px;font-size:14px">Anuluj</button>
+      <button class="btn" style="width:auto;margin:0;padding:6px 12px;font-size:14px;background:#1b5e20">Zapisz</button></div>`;
+    const ta = bub.querySelector('textarea'); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+    const [cancel, save] = bub.querySelectorAll('button');
+    cancel.onclick = () => showClient(id);
+    save.onclick = () => { const t = ta.value.trim(); if (!t) return alert('Notatka nie może być pusta – użyj 🗑, żeby ją usunąć.');
+      const cc = findClient(id), mm = (cc.log || []).find(x => x.id === m.id); if (!mm) return;
+      mm.text = t; mm.edited = true; saveClient(cc); showClient(id); };
+  });
   app.querySelectorAll('[data-dl]').forEach(b => b.onclick = () => {
     if (!confirm('Usunąć tę notatkę?')) return;
     const cc = findClient(id); cc.log = (cc.log || []).filter(m => m.id !== b.dataset.dl); saveClient(cc); showClient(id); });
