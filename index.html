@@ -46,7 +46,14 @@ nav .ic{font-size:19px;line-height:1.1}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 12px}
 .chips label{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid var(--g3);border-radius:20px;font-size:15px;color:inherit;background:#fbfdfb}
 .chips input{width:18px;height:18px;margin:0}
-.modal{position:fixed;inset:0;background:#0007;z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.modal{position:fixed;inset:0;background:#0007;z-index:20;display:flex;align-items:flex-end;justify-content:center;overflow:auto;-webkit-overflow-scrolling:touch}
+.chat{max-height:340px;overflow:auto;display:flex;flex-direction:column;gap:8px;padding:4px 2px 8px}
+.bub{align-self:flex-start;max-width:88%;background:var(--g2);border-radius:16px 16px 16px 4px;padding:8px 12px;position:relative}
+.bub.me{align-self:flex-end;background:var(--g);color:#fff;border-radius:16px 16px 4px 16px}
+.bub .meta{font-size:11px;opacity:.7;margin-top:3px;display:flex;gap:10px;justify-content:space-between;align-items:center}
+.bub .x{background:none;border:none;color:inherit;opacity:.8;font-size:15px;padding:0 0 0 6px;font-family:inherit}
+.chatin{display:flex;gap:8px;align-items:flex-end}.chatin textarea{margin:0;min-height:44px;resize:none}
+.chatin button{flex:none;width:48px;height:44px;border:none;border-radius:12px;background:var(--g);color:#fff;font-size:20px}
 .sheet{background:#fff;width:100%;max-width:600px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:16px 16px calc(18px + env(safe-area-inset-bottom))}
 .stat{flex:1;background:#f6faf6;border-radius:12px;padding:10px}.stat b{display:block;font-size:20px}
 .seg{display:flex;gap:6px;background:#f6faf6;padding:4px;border-radius:12px;margin-bottom:10px}
@@ -207,6 +214,13 @@ function playSiren(){
 }
 
 // ---------- przeniesienie / odwołanie wizyty ----------
+// ---------- notatki klienta (dymki czatu) ----------
+function logAdd(c, text, kind = 'note'){
+  text = (text || '').trim(); if (!text) return;
+  (c.log = c.log || []).push({id: newId(), ts: new Date().toISOString(), text, kind});
+}
+const KIND = {note: '', move: '📅 ', cancel: '✕ ', done: '✓ '};
+const chatDraft = {};
 function sheet(html){
   const w = document.createElement('div'); w.className = 'modal';
   w.innerHTML = `<div class="sheet">${html}</div>`;
@@ -234,14 +248,16 @@ function moveDialog(cid, vid, after = afterDefault){
     <p class="muted" style="margin-top:-8px">${esc(c.name)} · teraz: ${shortDate(v.date)}${v.time ? ', ' + v.time : ''}</p>
     <label>Nowa data</label><input id="mvd" type="date" value="${v.date}">
     ${timeFields('mv', v)}
-    <label>Powód (tylko dla Ciebie, opcjonalnie)</label><input id="mvr" placeholder="np. deszcz, klient poprosił">
-    ${c.phone ? '<label><input type="checkbox" id="mvs" style="width:auto" checked> Wyślij klientowi SMS o nowym terminie</label><br><br>' : ''}
+    <label>Powód (tylko dla Ciebie, opcjonalnie)</label><textarea id="mvr" rows="2" placeholder="np. deszcz, klient poprosił"></textarea>
+    ${c.phone ? '<label><input type="checkbox" id="mvs" style="width:auto"> Wyślij klientowi SMS o nowym terminie</label><br><br>' : ''}
     <button class="btn" id="mvS">Przenieś</button><button class="btn sec" id="mvC">Wróć</button>`);
   q('mvC').onclick = () => w.remove();
   q('mvS').onclick = () => {
     const nd = q('mvd').value; if (!nd) return alert('Wybierz nową datę');
     const old = {d: v.date, t: v.time};
-    v.movedFrom = v.date; v.moveReason = q('mvr').value.trim(); v.date = nd; v.time = q('mvt').value; v.dur = +q('mvu').value || null;
+    v.movedFrom = v.date; v.moveReason = q('mvr').value.trim();
+    logAdd(c, `Przeniesiono wizytę z ${shortDate(v.date)} na ${shortDate(nd)}${v.moveReason ? '. Powód: ' + v.moveReason : ''}`, 'move');
+    v.date = nd; v.time = q('mvt').value; v.dur = +q('mvu').value || null;
     saveClient(c); w.remove(); selDay = nd;
     const sms = q('mvs') && q('mvs').checked;
     after();
@@ -253,12 +269,13 @@ function cancelDialog(cid, vid, after = afterDefault){
   const v = (c.visits||[]).find(x => x.id === vid); if (!v) return;
   const [w, q] = sheet(`<h3 style="margin-top:0">✕ Odwołać wizytę?</h3>
     <p class="muted" style="margin-top:-8px">${esc(c.name)} · ${shortDate(v.date)}${v.time ? ', ' + v.time : ''}</p>
-    <label>Powód (tylko dla Ciebie, opcjonalnie)</label><input id="cxr" placeholder="np. deszcz, klient wyjechał">
+    <label>Powód (tylko dla Ciebie, opcjonalnie)</label><textarea id="cxr" rows="2" placeholder="np. deszcz, klient wyjechał"></textarea>
     ${c.phone ? '<label><input type="checkbox" id="cxs" style="width:auto" checked> Wyślij klientowi SMS o odwołaniu</label><br><br>' : ''}
     <button class="btn del" id="cxS">✕ Odwołaj wizytę</button><button class="btn sec" id="cxC">Wróć</button>`);
   q('cxC').onclick = () => w.remove();
   q('cxS').onclick = () => {
     v.cancelled = true; v.done = false; v.cancelReason = q('cxr').value.trim();
+    logAdd(c, `Odwołano wizytę z ${shortDate(v.date)}${v.cancelReason ? '. Powód: ' + v.cancelReason : ''}`, 'cancel');
     saveClient(c); w.remove();
     const sms = q('cxs') && q('cxs').checked;
     after();
@@ -372,6 +389,7 @@ function doneDialog(cid, vid){
     if (k === '' || isNaN(+k)) { alert('Wpisz kwotę (może być 0).'); return q('mdK').focus(); }
     v.amount = +k; v.paid = true; v.paidAt = ymd(new Date());
     v.hours = parseH(q('mdH').value); v.helpers = readHelpers(w, v.hours);
+    if (v.desc) logAdd(c, `${shortDate(v.date)}: ${v.desc}${v.hours ? ' (' + fmtH(v.hours) + ')' : ''}`, 'done');
     addNext(c, v, plan);
     playSiren();
     saveClient(c); w.remove(); if (view) view();
@@ -885,6 +903,13 @@ function showClient(id){
       <div class="stat" style="padding:8px"><span class="muted" style="font-size:13px">Wykonane</span><b style="font-size:18px">${st.n}</b></div>
       <div class="stat" style="padding:8px"><span class="muted" style="font-size:13px">Czas pracy</span><b style="font-size:18px">${fmtH(st.h)}</b></div>
       <div class="stat" style="padding:8px"><span class="muted" style="font-size:13px">Zapłacono</span><b style="font-size:18px">${st.z} zł</b></div></div>` : ''; })()}
+    <h3 style="margin-bottom:6px">💬 Notatki</h3>
+    <div class="card"><div class="chat" id="chat">${(c.log || []).length ? c.log.map(m => `<div class="bub ${m.kind === 'note' ? 'me' : ''}">
+        <div style="white-space:pre-wrap">${KIND[m.kind] || ''}${esc(m.text)}</div>
+        <div class="meta"><span>${new Date(m.ts).toLocaleString('pl-PL', {day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'})}</span>
+        <button class="x" data-dl="${m.id}" title="Usuń">🗑</button></div></div>`).join('')
+        : '<p class="muted" style="margin:0">Brak notatek. Napisz coś poniżej – opisy prac, przeniesienia i odwołania też zapiszą się tutaj.</p>'}</div>
+      <div class="chatin"><textarea id="msg" rows="1" placeholder="Napisz notatkę…">${esc(chatDraft[c.id] || '')}</textarea><button id="send" title="Zapisz">➤</button></div></div>
     <button class="btn" id="nv">+ Dodaj wizytę / termin</button><h3>Historia wizyt</h3>
     ${vs.map(v => `<div class="card" data-v="${v.id}" style="${v.cancelled ? 'opacity:.55' : ''}"><div class="row"><b>${plDate(v.date)}</b><span>${v.done ? '✅ Zrobione' : v.cancelled ? '🚫 Odwołana' : '⏳ Zaplanowane'}</span></div>
       ${v.done ? (hoursOf(v) ? `<div style="font-size:14px;font-weight:600">⏱ Usługa trwała: ${fmtH(hoursOf(v))}</div>` : '')
@@ -897,6 +922,13 @@ function showClient(id){
       || '<p class="muted">Brak wizyt.</p>'}`;
   loadImgs();
   $('ed').onclick = () => editClient(id);
+  const ch = $('chat'); ch.scrollTop = ch.scrollHeight;
+  $('msg').oninput = e => { chatDraft[id] = e.target.value; e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 140) + 'px'; };
+  $('send').onclick = () => { const t = $('msg').value.trim(); if (!t) return;
+    chatDraft[id] = ''; const cc = findClient(id); logAdd(cc, t, 'note'); saveClient(cc); showClient(id); };
+  app.querySelectorAll('[data-dl]').forEach(b => b.onclick = () => {
+    if (!confirm('Usunąć tę notatkę?')) return;
+    const cc = findClient(id); cc.log = (cc.log || []).filter(m => m.id !== b.dataset.dl); saveClient(cc); showClient(id); });
   $('nv').onclick = () => editVisit(id, null, () => showClient(id));
   app.querySelectorAll('[data-v]').forEach(e => e.onclick = () => editVisit(id, e.dataset.v, () => showClient(id)));
   bindQuick();
