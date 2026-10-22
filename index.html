@@ -65,7 +65,7 @@ nav .ic{font-size:19px;line-height:1.1}
 <body>
 <div class="top">
 <header><button id="back" style="display:none">‹</button><img id="logo" alt=""><span id="title">Gruszka</span></header>
-<nav id="nav" style="display:none"><button id="tCli" class="on"><span class="ic">👥</span>Klienci</button><button id="tCal"><span class="ic">📅</span>Kalendarz</button><button id="tPay"><span class="ic">💰</span>Płatności</button><button id="tHis"><span class="ic">🕘</span>Historia</button><button id="tTeam"><span class="ic">👷</span>Pomocnicy</button><button id="tNew"><span class="ic">📰</span>Aktualności</button></nav>
+<nav id="nav" style="display:none"><button id="tCli" class="on"><span class="ic">👥</span>Klienci</button><button id="tCal"><span class="ic">📅</span>Kalendarz</button><button id="tPay"><span class="ic">💰</span>Płatności</button><button id="tHis"><span class="ic">🕘</span>Historia</button><button id="tTeam"><span class="ic">⏱</span>Czas pracy</button><button id="tNew"><span class="ic">📰</span>Aktualności</button></nav>
 </div>
 <main id="app"><p class="muted">Ładowanie...</p></main>
 
@@ -296,7 +296,7 @@ const hoursOf = v => v.hours != null ? +v.hours : (v.dur ? v.dur / 60 : 0);
 function helpersHtml(v){
   const list = [...(settings.helpers || [])];
   (v.helpers || []).forEach(x => { if (!list.some(h => h.id === x.id)) list.push({id: x.id, name: x.name}); });
-  if (!list.length) return '<p class="muted">Dodaj pomocników w zakładce 👷 Pomocnicy.</p>';
+  if (!list.length) return '<p class="muted">Dodaj pomocników w zakładce ⏱ Czas pracy.</p>';
   return `<label>👷 Pomagali (zaznacz i wpisz godziny)</label>${list.map(h => { const x = (v.helpers || []).find(y => y.id === h.id);
     return `<div class="hrow"><label><input type="checkbox" class="hck" data-hid="${h.id}" data-name="${esc(h.name)}" ${x ? 'checked' : ''}>${esc(h.name)}</label>
       <input class="hh" type="text" inputmode="decimal" autocomplete="off" placeholder="godz." value="${x && x.hours != null ? x.hours : ''}"></div>`; }).join('')}`;
@@ -687,7 +687,7 @@ function showPay(){
 
 // ---------- POMOCNICY I GODZINY ----------
 function showTeam(){
-  view = showTeam; tab('team'); head('Pomocnicy i godziny');
+  view = showTeam; tab('team'); head('Czas pracy');
   const now = new Date(), today = ymd(now);
   const ws = addDays(today, -((now.getDay() + 6) % 7)), we = addDays(ws, 6);
   const mk = today.slice(0, 7), yk = today.slice(0, 4);
