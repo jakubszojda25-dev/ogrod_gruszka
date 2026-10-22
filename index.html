@@ -125,7 +125,7 @@ const fs = initializeFirestore(fb, { localCache: persistentLocalCache() });
 // ---------- pomocnicze ----------
 const $ = id => document.getElementById(id);
 const app = $('app');
-const APP_VER = '23.10.2026 · 00:05';
+const APP_VER = '23.10.2026 · 00:10';
 
 // ---------- LOGO: drzewo gruszy ----------
 const ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
@@ -350,27 +350,23 @@ function helpersHtml(v){
   (v.helpers || []).forEach(x => { if (!list.some(h => h.id === x.id)) list.push({id: x.id, name: x.name}); });
   if (!list.length) return '<p class="muted">Dodaj pomocników w zakładce ⏱ Czas pracy.</p>';
   return `<label>👷 Pomagali – zaznacz, wpisz godziny i ile dajesz (zł)</label>${list.map(h => { const x = (v.helpers || []).find(y => y.id === h.id);
-    return `<div class="hrow"><label><input type="checkbox" class="hck" data-hid="${h.id}" data-name="${esc(h.name)}" data-rate="${h.rate || ''}" ${x ? 'checked' : ''}>${esc(h.name)}</label>
+    return `<div class="hrow"><label><input type="checkbox" class="hck" data-hid="${h.id}" data-name="${esc(h.name)}" ${x ? 'checked' : ''}>${esc(h.name)}</label>
       <input class="hh" type="text" inputmode="decimal" autocomplete="off" placeholder="godz." value="${x && x.hours != null ? x.hours : ''}">
-      <input class="hp" type="text" inputmode="decimal" autocomplete="off" placeholder="zł" data-auto="${x && x.pay != null ? 0 : 1}" value="${x && x.pay != null ? x.pay : ''}"></div>`; }).join('')}
-    <p class="muted" style="margin:-2px 0 10px;font-size:12px">Kwota dla pomocnika odlicza się od Twojego zarobku. Jeśli ustawisz mu stawkę za godzinę w zakładce ⏱ Czas pracy, policzy się sama.</p>`;
+      <input class="hp" type="text" inputmode="decimal" autocomplete="off" placeholder="zł" value="${x && x.pay != null ? x.pay : ''}"></div>`; }).join('')}
+    <p class="muted" style="margin:-2px 0 10px;font-size:12px">Wpisz, ile dałeś każdemu pomocnikowi – kwota odliczy się od Twojego zarobku.</p>`;
 }
 function bindHelpers(root, myH){
   root.querySelectorAll('.hrow').forEach(r => {
-    const ck = r.querySelector('.hck'), hh = r.querySelector('.hh'), hp = r.querySelector('.hp'), rate = parseH(ck.dataset.rate);
-    const auto = () => { if (rate && hp.dataset.auto === '1') { const h = parseH(hh.value); hp.value = h != null ? Math.round(h * rate * 100) / 100 : ''; } };
-    ck.onchange = () => { if (ck.checked && hh.value === '' && myH() != null) hh.value = myH(); auto(); };
-    hh.oninput = () => { if (hh.value !== '') ck.checked = true; auto(); };
-    hp.oninput = () => { hp.dataset.auto = hp.value === '' ? '1' : '0'; if (hp.value !== '') ck.checked = true; };
+    const ck = r.querySelector('.hck'), hh = r.querySelector('.hh'), hp = r.querySelector('.hp');
+    ck.onchange = () => { if (ck.checked && hh.value === '' && myH() != null) hh.value = myH(); };
+    hh.oninput = () => { if (hh.value !== '') ck.checked = true; };
+    hp.oninput = () => { if (hp.value !== '') ck.checked = true; };
   });
 }
 const readHelpers = (root, myH) => [...root.querySelectorAll('.hrow')].map(r => {
   const ck = r.querySelector('.hck'); if (!ck.checked) return null;
-  const h = parseH(r.querySelector('.hh').value), rate = parseH(ck.dataset.rate);
-  let pay = parseH(r.querySelector('.hp').value);
-  const hours = h ?? myH ?? null;
-  if (pay == null && rate && hours != null) pay = Math.round(hours * rate * 100) / 100;
-  return {id: ck.dataset.hid, name: ck.dataset.name, hours, pay};
+  const h = parseH(r.querySelector('.hh').value), pay = parseH(r.querySelector('.hp').value);
+  return {id: ck.dataset.hid, name: ck.dataset.name, hours: h ?? myH ?? null, pay};
 }).filter(Boolean);
 function teamHtml(sel){
   const hs = settings.helpers || []; if (!hs.length) return '';
@@ -882,17 +878,13 @@ function showTeam(){
         <span style="display:flex;gap:6px;flex:none"><button class="btn sec" style="width:auto;margin:0;padding:6px 10px;font-size:14px" data-ren="${h.id}">✏️</button>
         <button class="btn del" style="width:auto;margin:0;padding:6px 10px;font-size:14px" data-del="${h.id}">🗑</button></span></div>
         <div class="muted" style="font-size:13px;margin-top:6px">Godziny</div>${stats(hOf(h.id), fmtH)}
-        <div class="muted" style="font-size:13px;margin-top:8px">Wypłacono</div>${stats(pOf(h.id), zl, '#e65100')}
-        <div style="display:flex;gap:8px;align-items:center;margin-top:10px"><label style="flex:1;margin:0">Stawka za godzinę (opcjonalnie)</label>
-          <input data-rate="${h.id}" type="text" inputmode="decimal" autocomplete="off" placeholder="zł/h" value="${h.rate ?? ''}" style="width:90px;margin:0"></div></div>`).join('')
+        <div class="muted" style="font-size:13px;margin-top:8px">Wypłacono</div>${stats(pOf(h.id), zl, '#e65100')}</div>`).join('')
       || '<p class="muted">Nie masz jeszcze pomocników.</p>'}
     <div class="card"><label>Dodaj pomocnika</label>
       <div style="display:flex;gap:8px"><input id="hn" placeholder="Imię, np. Kasia" style="margin:0"><button class="btn" style="width:auto;margin:0;padding:0 18px" id="ha">+</button></div></div>
     <p class="muted" style="font-size:13px">Pomocników zaznaczasz w okienku po odhaczeniu wizyty (✓): wpisujesz ich godziny i ile im dajesz. Ta kwota odlicza się od Twojego zarobku.</p>`;
   $('ha').onclick = () => { const n = $('hn').value.trim(); if (!n) return;
     settings.helpers = [...hs, {id: newId(), name: n}]; saveSettings(); showTeam(); };
-  app.querySelectorAll('[data-rate]').forEach(inp => inp.onchange = () => {
-    const h = hs.find(x => x.id === inp.dataset.rate); h.rate = parseH(inp.value); settings.helpers = hs; saveSettings(); });
   app.querySelectorAll('[data-ren]').forEach(b => b.onclick = () => {
     const h = hs.find(x => x.id === b.dataset.ren); const n = prompt('Nowe imię:', h.name); if (!n || !n.trim()) return;
     h.name = n.trim(); settings.helpers = hs; saveSettings(); showTeam(); });
