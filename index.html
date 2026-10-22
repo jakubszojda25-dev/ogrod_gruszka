@@ -535,42 +535,52 @@ function showCal(){
 // ---------- AKTUALNOŚCI ----------
 const pl = (n, a, b, c) => n === 1 ? a : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) ? b : c;
 const dueList = () => { const r = []; clients.forEach(c => (c.visits||[]).forEach(v => { if (v.done && !v.paid) r.push({c, v}); })); return r; };
+const navUrl = a => 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + encodeURIComponent(a);
+const routeUrl = addrs => !addrs.length ? '' : navUrl(addrs[addrs.length - 1])
+  + (addrs.length > 1 ? '&waypoints=' + encodeURIComponent(addrs.slice(0, -1).join('|')) : '');
 function showNews(){
   view = showNews; tab('new'); head('Aktualności');
   reminders();
-  const today = ymd(new Date()), tom = addDays(today, 1), wk = addDays(today, 7);
-  const items = clients.map(c => ({c, v: pending(c)})).filter(x => x.v)
-    .sort((a, b) => (a.v.date + (a.v.time || '99')).localeCompare(b.v.date + (b.v.time || '99')));
-  const todayV = []; clients.forEach(c => (c.visits||[]).forEach(v => { if (v.date === today && !v.done && !v.cancelled) todayV.push(v); }));
-  const todayMin = todayV.reduce((s, v) => s + (+v.dur || 0), 0);
-  const stops = []; clients.forEach(c => (c.visits||[]).forEach(v => { if (v.date === today && !v.done && !v.cancelled && c.address) stops.push({t: v.time || '99', a: c.address}); }));
-  stops.sort((a, b) => a.t.localeCompare(b.t));
-  const addrs = [...new Set(stops.map(x => x.a))];
-  const route = addrs.length ? 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + encodeURIComponent(addrs[addrs.length - 1])
-    + (addrs.length > 1 ? '&waypoints=' + encodeURIComponent(addrs.slice(0, -1).join('|')) : '') : '';
+  const today = ymd(new Date()), tom = addDays(today, 1), last = addDays(today, 6);
+  const all = []; clients.forEach(c => (c.visits||[]).forEach(v => { if (!v.done && !v.cancelled) all.push({c, v}); }));
+  const key = x => x.v.date + (x.v.time || '99');
+  all.sort((a, b) => key(a).localeCompare(key(b)));
+  const overdue = all.filter(x => x.v.date < today);
+  const byDay = {}; all.filter(x => x.v.date >= today && x.v.date <= last).forEach(x => (byDay[x.v.date] = byDay[x.v.date] || []).push(x));
+  const inWeek = new Set(all.filter(x => x.v.date >= today && x.v.date <= last).map(x => x.c.id));
+  const later = []; all.filter(x => x.v.date > last).forEach(x => { if (!inWeek.has(x.c.id) && !later.some(y => y.c.id === x.c.id)) later.push(x); });
+  const todayL = byDay[today] || [];
+  const todayMin = todayL.reduce((s, x) => s + (+x.v.dur || 0), 0);
   const due = dueList(), mk = today.slice(0, 7);
   const monthIn = clients.reduce((s, c) => s + (c.visits||[]).filter(v => v.done && v.paid && (v.paidAt || v.date).startsWith(mk)).reduce((t, v) => t + (+v.amount || 0), 0), 0);
-  const grp = d => d < today ? '⚠️ Zaległe' : d === today ? '📍 Dziś' : d === tom ? 'Jutro' : d <= wk ? 'W tym tygodniu' : 'Później';
+
+  const card = ({c, v}, n, color) => `<div class="card" data-c="${c.id}" data-v="${v.id}" style="${color ? 'border-left:5px solid ' + color : ''}">
+      <div class="row"><b>${n ? `<span class="tag" style="margin-right:6px">${n}</span>` : ''}${esc(c.name)}</b><span class="muted">${n ? '' : shortDate(v.date)}</span></div>
+      ${whenTxt(v) ? `<div style="font-size:14px;font-weight:600">${whenTxt(v)}</div>` : ''}${v.movedFrom ? `<span class="tag orange">↪ przeniesiona z ${shortDate(v.movedFrom)}</span>` : ''}
+      ${v.desc ? `<div>🔧 ${esc(v.desc)}</div>` : ''}
+      ${c.address ? `<div class="row" style="margin-top:6px;gap:8px"><span style="font-size:14px">📍 ${esc(c.address)}</span>
+        <a class="smsb" style="margin:0;background:var(--g2);color:var(--g)" href="${navUrl(c.address)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🧭 Nawiguj</a></div>` : ''}
+      ${c.phone ? `<div style="font-size:14px;margin-top:4px">📞 <a href="tel:${esc(c.phone)}" onclick="event.stopPropagation()">${esc(c.phone)}</a></div>` : ''}
+      ${quickBtns(c, v)}</div>`;
+  const dayHead = (d, list) => {
+    const addrs = [...new Set(list.filter(x => x.c.address).map(x => x.c.address))];
+    const min = list.reduce((s, x) => s + (+x.v.dur || 0), 0);
+    const name = d === today ? '📍 Dziś' : d === tom ? 'Jutro' : new Date(d + 'T12:00').toLocaleDateString('pl-PL', {weekday: 'long'}).replace(/^./, m => m.toUpperCase());
+    return `<div class="row" style="margin:18px 0 8px;gap:8px"><div><h3 style="margin:0">${name}</h3>
+        <span class="muted" style="font-size:13px">${shortDate(d)} · ${list.length} ${pl(list.length, 'wizyta', 'wizyty', 'wizyt')}${min ? ' · ' + fmtDur(min) : ''}</span></div>
+      ${addrs.length ? `<a class="smsb" style="margin:0;background:var(--g);color:#fff" href="${routeUrl(addrs)}" target="_blank" rel="noopener">🗺 Trasa${addrs.length > 1 ? ' (' + addrs.length + ')' : ''}</a>` : ''}</div>`;
+  };
+
   let html = `<div class="card" style="display:flex;gap:10px">
-      <div style="flex:1"><div class="muted">Dziś</div><b style="font-size:20px">${todayV.length} ${pl(todayV.length, 'wizyta', 'wizyty', 'wizyt')}</b>
+      <div style="flex:1"><div class="muted">Dziś</div><b style="font-size:20px">${todayL.length} ${pl(todayL.length, 'wizyta', 'wizyty', 'wizyt')}</b>
         ${todayMin ? `<div class="muted">${fmtDur(todayMin)} pracy</div>` : ''}</div>
       <div style="flex:1;cursor:pointer" id="gopay"><div class="muted">Wpłynęło w tym miesiącu</div><b style="font-size:20px;color:var(--g)">${monthIn} zł</b>
-        <div class="muted">${due.length ? `<span style="color:#c62828">${due.length} do rozliczenia</span>` : 'Płatności'} ›</div></div></div>
-    ${route ? `<a class="btn sec" style="text-align:center;text-decoration:none;box-sizing:border-box" href="${route}" target="_blank" rel="noopener">🗺 Trasa na dziś (${addrs.length} ${addrs.length === 1 ? 'adres' : 'adresy'})</a>` : ''}
-    <p class="muted" style="margin:10px 0 0">Najbliższa wizyta u każdego klienta:</p>`;
-  let g = '';
-  items.forEach(({c, v}) => {
-    const gg = grp(v.date);
-    if (gg !== g) { g = gg; html += `<h3 style="margin:16px 0 8px">${gg}</h3>`; }
-    html += `<div class="card" data-c="${c.id}" data-v="${v.id}" style="${v.date < today ? 'border-left:5px solid #c62828' : v.date === today ? 'border-left:5px solid var(--g)' : ''}">
-      <div class="row"><b>${esc(c.name)}</b><span class="muted">${shortDate(v.date)}</span></div>
-      ${whenTxt(v) ? `<div style="font-size:14px;font-weight:600">${whenTxt(v)}</div>` : ''}${v.movedFrom && !v.done ? `<span class="tag orange">↪ przeniesiona z ${shortDate(v.movedFrom)}</span>` : ''}
-      ${v.desc ? `<div>🔧 ${esc(v.desc)}</div>` : ''}
-      <div style="font-size:14px;margin-top:4px">${c.address ? `📍 <a href="https://maps.apple.com/?q=${encodeURIComponent(c.address)}" onclick="event.stopPropagation()">${esc(c.address)}</a>` : ''}
-      ${c.phone ? `${c.address ? ' · ' : ''}📞 <a href="tel:${esc(c.phone)}" onclick="event.stopPropagation()">Zadzwoń</a>` : ''}</div>
-      ${quickBtns(c, v)}</div>`;
-  });
-  if (!items.length) html += '<p class="muted">Brak zaplanowanych wizyt. Dodasz je w Kalendarzu przyciskiem +.</p>';
+        <div class="muted">${due.length ? `<span style="color:#c62828">${due.length} do rozliczenia</span>` : 'Płatności'} ›</div></div></div>`;
+  if (overdue.length) html += `<h3 style="margin:18px 0 8px">⚠️ Zaległe</h3>` + overdue.map(x => card(x, 0, '#c62828')).join('');
+  html += dayHead(today, todayL) + (todayL.length ? todayL.map((x, i) => card(x, i + 1, 'var(--g)')).join('') : '<p class="muted">Na dziś nic nie ma zaplanowanego.</p>');
+  for (let k = 1; k <= 6; k++) { const d = addDays(today, k), l = byDay[d]; if (l) html += dayHead(d, l) + l.map((x, i) => card(x, i + 1)).join(''); }
+  if (later.length) html += `<h3 style="margin:18px 0 8px">Później</h3><p class="muted" style="margin:-4px 0 8px;font-size:13px">Najbliższa wizyta u pozostałych klientów</p>` + later.map(x => card(x, 0)).join('');
+  if (!all.length) html += '<p class="muted">Brak zaplanowanych wizyt. Dodasz je w Kalendarzu przyciskiem +.</p>';
   app.innerHTML = html;
   $('gopay').onclick = () => showPay();
   app.querySelectorAll('[data-v]').forEach(e => e.onclick = () => editVisit(e.dataset.c, e.dataset.v, showNews));
