@@ -38,6 +38,10 @@ nav button.on{background:var(--g);color:#fff;font-weight:700}
 .muted{color:#6b8a6e;font-size:14px}
 .row{display:flex;justify-content:space-between;align-items:center}
 a{color:var(--g);font-weight:600}
+.qrow{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:8px}
+.qk{width:48px;height:48px;border-radius:50%;border:2px solid;background:#fff;font-size:24px;font-weight:700;line-height:1;padding:0;font-family:inherit;display:inline-flex;align-items:center;justify-content:center}
+.qk.ok{border-color:var(--g);color:var(--g)}.qk.ok:active{background:var(--g);color:#fff}
+.qk.no{border-color:#e57373;color:#c62828}.qk.no:active{background:#c62828;color:#fff}
 </style>
 </head>
 <body>
@@ -129,9 +133,9 @@ function setVisit(cid, vid, act){
   if (act === 'restore') v.cancelled = false;
   saveClient(c); if (view) view();
 }
-const quickBtns = (c, v) => (v.done || v.cancelled) ? '' : `<div style="display:flex;gap:8px;margin-top:8px">
-  <button class="btn" style="margin:0;padding:10px" data-act="done" data-c="${c.id}" data-vid="${v.id}">✅ Zrobione</button>
-  <button class="btn del" style="margin:0;padding:10px" data-act="cancel" data-c="${c.id}" data-vid="${v.id}">✖ Anuluj</button></div>`;
+const quickBtns = (c, v) => (v.done || v.cancelled) ? '' : `<div class="qrow"><span class="muted" style="font-size:13px">Wizyta się odbyła?</span>
+  <button class="qk ok" title="Odbyła się" data-act="done" data-c="${c.id}" data-vid="${v.id}">✓</button>
+  <button class="qk no" title="Nie odbyła się – anuluj" data-act="cancel" data-c="${c.id}" data-vid="${v.id}">✕</button></div>`;
 function bindQuick(){
   app.querySelectorAll('[data-act]').forEach(b => b.onclick = e => {
     e.stopPropagation();
@@ -307,6 +311,7 @@ function showCal(){
 let cliSort = 'az';
 const shortDate = s => new Date(s+'T12:00').toLocaleDateString('pl-PL',{day:'numeric',month:'short',year:'numeric'});
 const lastDone = c => (c.visits||[]).filter(v => v.done).sort((a, b) => b.date.localeCompare(a.date))[0];
+const pending = c => (c.visits||[]).filter(v => !v.done && !v.cancelled).sort((a, b) => a.date.localeCompare(b.date))[0];
 const nextPlan = c => { const t = ymd(new Date()); return (c.visits||[]).filter(v => !v.done && !v.cancelled && v.date >= t).sort((a, b) => a.date.localeCompare(b.date))[0]; };
 function showClients(){
   view = showClients; tab('cli'); head('Lista klientów');
@@ -320,15 +325,16 @@ function showClients(){
   const draw = () => {
     const f = $('q').value.toLowerCase();
     const cs = clients.filter(c => (c.name + ' ' + c.address + ' ' + c.phone).toLowerCase().includes(f))
-      .map(c => ({c, l: lastDone(c), n: nextPlan(c)}));
+      .map(c => ({c, l: lastDone(c), n: pending(c)}));
     if (cliSort === 'az') cs.sort((a, b) => a.c.name.localeCompare(b.c.name, 'pl'));
     else { const k = x => x.l ? x.l.date : ''; cs.sort((a, b) => cliSort === 'old' ? k(a).localeCompare(k(b)) : k(b).localeCompare(k(a))); }
     $('list').innerHTML = cs.map(({c, l, n}) => `<div class="card" data-id="${c.id}"><b>${esc(c.name)}</b>
       <div class="muted">${esc(c.address)}${c.phone ? ' · ' + esc(c.phone) : ''}</div>
       <div style="margin-top:6px;font-size:14px">✅ Ostatnio: ${l ? `<b>${shortDate(l.date)}</b>${l.desc ? ' – ' + esc(l.desc.slice(0, 60)) + (l.desc.length > 60 ? '…' : '') : ''}` : '<span class="muted">jeszcze nic</span>'}</div>
-      ${n ? `<div style="font-size:14px">⏳ Następna: <b>${shortDate(n.date)}${n.time ? ', ' + n.time : ''}</b>${n.dur ? ' (' + fmtDur(n.dur) + ')' : ''}</div>` : ''}</div>`).join('')
+      ${n ? `<div style="font-size:14px">${n.date < ymd(new Date()) ? '⚠️ Zaległa' : '⏳ Następna'}: <b>${shortDate(n.date)}${n.time ? ', ' + n.time : ''}</b>${n.dur ? ' (' + fmtDur(n.dur) + ')' : ''}</div>${quickBtns(c, n)}` : ''}</div>`).join('')
       || '<p class="muted">Brak klientów.</p>';
     app.querySelectorAll('[data-id]').forEach(e => e.onclick = () => showClient(e.dataset.id));
+    bindQuick();
   };
   draw();
   $('q').oninput = draw;
