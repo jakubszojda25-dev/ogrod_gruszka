@@ -120,6 +120,26 @@ const timeFields = (pre, v) => `<div style="display:flex;gap:8px">
   <div style="flex:1"><label>Godzina</label><input id="${pre}t" type="time" value="${v.time || ''}"></div>
   <div style="flex:1"><label>Przewidywany czas</label>${durSel(pre + 'u', v.dur)}</div></div>`;
 const byTime = (a, b) => (a.v.time || '99').localeCompare(b.v.time || '99');
+// ---------- szybkie odhaczanie / anulowanie ----------
+function setVisit(cid, vid, act){
+  const c = findClient(cid); if (!c) return;
+  const v = (c.visits||[]).find(x => x.id === vid); if (!v) return;
+  if (act === 'done') { v.done = true; v.cancelled = false; if (v.amount == null) v.amount = c.price ?? null; }
+  if (act === 'cancel') { v.cancelled = true; v.done = false; }
+  if (act === 'restore') v.cancelled = false;
+  saveClient(c); if (view) view();
+}
+const quickBtns = (c, v) => (v.done || v.cancelled) ? '' : `<div style="display:flex;gap:8px;margin-top:8px">
+  <button class="btn" style="margin:0;padding:10px" data-act="done" data-c="${c.id}" data-vid="${v.id}">✅ Zrobione</button>
+  <button class="btn del" style="margin:0;padding:10px" data-act="cancel" data-c="${c.id}" data-vid="${v.id}">✖ Anuluj</button></div>`;
+function bindQuick(){
+  app.querySelectorAll('[data-act]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    const {act, c, vid} = b.dataset;
+    if (act === 'cancel' && !confirm('Anulować to zlecenie? Zniknie z kalendarza i przypomnień.')) return;
+    setVisit(c, vid, act);
+  });
+}
 
 let user = null, clients = [], unsub = null, view = null;
 let calMonth = new Date(), selDay = ymd(new Date()), backFn = null;
@@ -227,7 +247,7 @@ const findClient = id => { const c = clients.find(x => x.id === id); return c ? 
 function reminders(){
   const today = ymd(new Date()), r = [];
   clients.forEach(c => (c.visits||[]).forEach(v => {
-    if (v.done) return;
+    if (v.done || v.cancelled) return;
     const ile = v.remind ?? 1;
     if (v.date < today) r.push({c, v, t: '⚠️ Zaległa – ' + plDate(v.date)});
     else if (ile >= 0 && addDays(v.date, -ile) <= today) r.push({c, v, t: v.date === today ? '🔔 DZIŚ' : '🔔 ' + plDate(v.date)});
@@ -251,7 +271,7 @@ function priceHtml(c){
 function showCal(){
   view = showCal; tab('cal'); head('Kalendarz');
   const byDay = {};
-  clients.forEach(c => (c.visits||[]).forEach(v => (byDay[v.date] = byDay[v.date] || []).push({c, v})));
+  clients.forEach(c => (c.visits||[]).forEach(v => { if (!v.cancelled) (byDay[v.date] = byDay[v.date] || []).push({c, v}); }));
   const y = calMonth.getFullYear(), m = calMonth.getMonth();
   const first = (new Date(y, m, 1).getDay() + 6) % 7, days = new Date(y, m + 1, 0).getDate();
   let g = '<div class="grid">' + ['Pn','Wt','Śr','Cz','Pt','So','Nd'].map(d => `<div class="muted">${d}</div>`).join('');
@@ -264,13 +284,13 @@ function showCal(){
   const list = (dayMin ? `<p class="muted">Zaplanowany czas pracy: <b>${fmtDur(dayMin)}</b></p>` : '') + (dayList.map(({c, v}) => `<div class="card" data-c="${c.id}" data-v="${v.id}">
     <div class="row"><b>${esc(c.name)}</b><span>${v.done ? '✅' : '⏳'}</span></div>
     ${whenTxt(v) ? `<div style="font-size:14px;font-weight:600">${whenTxt(v)}</div>` : ''}
-    <div class="muted">${esc(c.address)}</div>${v.desc ? `<div>${esc(v.desc)}</div>` : ''}</div>`).join('')
+    <div class="muted">${esc(c.address)}</div>${v.desc ? `<div>${esc(v.desc)}</div>` : ''}${quickBtns(c, v)}</div>`).join('')
     || '<p class="muted">Brak wizyt tego dnia.</p>');
   const rem = reminders();
   const remHtml = rem.length ? `<div class="card" style="border-left:5px solid #f57c00"><b>Przypomnienia (${rem.length})</b>
     ${rem.map(({c, v, t}) => `<div class="card" style="margin:8px 0 0;background:#fff8e1" data-c="${c.id}" data-v="${v.id}">
       <b>${t}${v.time ? ', ' + v.time : ''}</b>${v.dur ? ` <span class="muted">(${fmtDur(v.dur)})</span>` : ''}<br>${esc(c.name)} – <span class="muted">${esc(c.address)}</span>
-      ${c.phone ? `<br><a href="tel:${esc(c.phone)}" onclick="event.stopPropagation()">📞 Zadzwoń</a>` : ''}</div>`).join('')}</div>` : '';
+      ${c.phone ? `<br><a href="tel:${esc(c.phone)}" onclick="event.stopPropagation()">📞 Zadzwoń</a>` : ''}${quickBtns(c, v)}</div>`).join('')}</div>` : '';
   app.innerHTML = remHtml + `<div class="card"><div class="row">
     <button class="btn sec" style="width:auto;margin:0" id="pm">‹</button>
     <b>${calMonth.toLocaleDateString('pl-PL', {month:'long', year:'numeric'})}</b>
@@ -280,13 +300,14 @@ function showCal(){
   $('nm').onclick = () => { calMonth = new Date(y, m + 1, 1); showCal(); };
   app.querySelectorAll('[data-d]').forEach(e => e.onclick = () => { selDay = e.dataset.d; showCal(); });
   app.querySelectorAll('[data-v]').forEach(e => e.onclick = () => editVisit(e.dataset.c, e.dataset.v, showCal));
+  bindQuick();
 }
 
 // ---------- LISTA KLIENTÓW ----------
 let cliSort = 'az';
 const shortDate = s => new Date(s+'T12:00').toLocaleDateString('pl-PL',{day:'numeric',month:'short',year:'numeric'});
 const lastDone = c => (c.visits||[]).filter(v => v.done).sort((a, b) => b.date.localeCompare(a.date))[0];
-const nextPlan = c => { const t = ymd(new Date()); return (c.visits||[]).filter(v => !v.done && v.date >= t).sort((a, b) => a.date.localeCompare(b.date))[0]; };
+const nextPlan = c => { const t = ymd(new Date()); return (c.visits||[]).filter(v => !v.done && !v.cancelled && v.date >= t).sort((a, b) => a.date.localeCompare(b.date))[0]; };
 function showClients(){
   view = showClients; tab('cli'); head('Lista klientów');
   app.innerHTML = `<input id="q" placeholder="🔍 Szukaj: nazwisko, adres, telefon">
@@ -319,7 +340,27 @@ function showClients(){
 // ---------- HISTORIA PRAC ----------
 function showHistory(){
   view = showHistory; tab('his'); head('Historia prac');
-  app.innerHTML = `<input id="q" placeholder="🔍 Szukaj: klient, adres, opis"><div id="list"></div>`;
+  app.innerHTML = `<input id="q" placeholder="🔍 Szukaj: klient, adres, opis"><div id="list"></div>
+    <div class="card" style="margin-top:24px"><b>🗑 Czyszczenie historii</b>
+      <select id="clr"><option value="365">Usuń prace starsze niż 1 rok</option><option value="180">Usuń prace starsze niż pół roku</option>
+        <option value="90">Usuń prace starsze niż 3 miesiące</option><option value="0">Usuń całą historię</option></select>
+      <label><input type="checkbox" id="clrc" style="width:auto" checked> Usuń też anulowane zlecenia</label>
+      <p class="muted">Klienci zostają. Usuwane są tylko wykonane prace (razem ze zdjęciami), więc znikną też ich niezapłacone kwoty.</p>
+      <button class="btn del" id="clrb">Wyczyść historię</button></div>`;
+  $('clrb').onclick = () => {
+    const days = +$('clr').value, lim = days ? addDays(ymd(new Date()), -days) : '9999-12-31', withC = $('clrc').checked;
+    const gone = v => v.date < lim && (v.done || (withC && v.cancelled));
+    const n = clients.reduce((s, c) => s + (c.visits||[]).filter(gone).length, 0);
+    if (!n) return alert('Nie ma nic do usunięcia.');
+    if (!confirm(`Usunąć ${n} wpisów z historii razem ze zdjęciami? Tego nie da się cofnąć.`)) return;
+    if (!days && !confirm('Na pewno usunąć CAŁĄ historię?')) return;
+    clients.map(c => structuredClone(c)).forEach(c => {
+      const del = (c.visits||[]).filter(gone); if (!del.length) return;
+      del.forEach(v => [...(v.before||[]), ...(v.after||[])].forEach(delPhoto));
+      c.visits = c.visits.filter(v => !gone(v)); saveClient(c);
+    });
+    showHistory();
+  };
   const draw = () => {
     const f = $('q').value.toLowerCase(), all = [];
     clients.forEach(c => (c.visits||[]).forEach(v => {
@@ -356,16 +397,17 @@ function showClient(id){
     ${c.notes ? `<p class="muted">${esc(c.notes)}</p>` : ''}
     <button class="btn sec" id="ed">✏️ Edytuj dane i cenę</button></div>
     <button class="btn" id="nv">+ Dodaj wizytę / termin</button><h3>Historia wizyt</h3>
-    ${vs.map(v => `<div class="card" data-v="${v.id}"><div class="row"><b>${plDate(v.date)}</b><span>${v.done ? '✅ Zrobione' : '⏳ Zaplanowane'}</span></div>
+    ${vs.map(v => `<div class="card" data-v="${v.id}" style="${v.cancelled ? 'opacity:.55' : ''}"><div class="row"><b>${plDate(v.date)}</b><span>${v.done ? '✅ Zrobione' : v.cancelled ? '🚫 Anulowane' : '⏳ Zaplanowane'}</span></div>
       ${whenTxt(v) ? `<div style="font-size:14px">${whenTxt(v)}</div>` : ''}
       ${v.desc ? `<div>${esc(v.desc)}</div>` : ''}
       ${v.amount != null ? `<div>${v.amount} zł – ${v.paid ? '✅ zapłacone' : '❌ niezapłacone'}</div>` : ''}
-      <div class="photos">${[...(v.before||[]).slice(0,2), ...(v.after||[]).slice(0,2)].map(p => `<img data-pid="${p}">`).join('')}</div></div>`).join('')
+      <div class="photos">${[...(v.before||[]).slice(0,2), ...(v.after||[]).slice(0,2)].map(p => `<img data-pid="${p}">`).join('')}</div>${quickBtns(c, v)}</div>`).join('')
       || '<p class="muted">Brak wizyt.</p>'}`;
   loadImgs();
   $('ed').onclick = () => editClient(id);
   $('nv').onclick = () => editVisit(id, null, () => showClient(id));
   app.querySelectorAll('[data-v]').forEach(e => e.onclick = () => editVisit(id, e.dataset.v, () => showClient(id)));
+  bindQuick();
 }
 
 // ---------- FORMULARZ KLIENTA ----------
@@ -470,10 +512,13 @@ function editVisit(cid, vid, back){
     <button class="btn sec" id="aa">📷 Dodaj zdjęcia po</button><br>
     <label>Następna wizyta (opcjonalnie)</label><input id="nx" type="date">
     ${timeFields('nx', {})}
-    <button class="btn" id="s">Zapisz</button>${isNew ? '' : '<button class="btn del" id="d">Usuń wizytę</button>'}</div>
+    ${v.cancelled ? '<p style="color:#c62828;font-weight:600">🚫 To zlecenie jest anulowane.</p>' : ''}
+    <button class="btn" id="s">Zapisz</button>
+    ${isNew || v.done ? '' : v.cancelled ? '<button class="btn sec" id="cx">↩️ Przywróć zlecenie</button>' : '<button class="btn del" id="cx">✖ Anuluj zlecenie</button>'}
+    ${isNew ? '' : '<button class="btn del" id="d">🗑 Usuń wizytę</button>'}</div>
     <p class="muted">Dotknij zdjęcia, aby je powiększyć lub usunąć.</p>`;
     loadImgs();
-    const keep = () => { v.date = $('dt').value; v.time = $('dtt').value; v.dur = +$('dtu').value || null; v.remind = +$('rm').value; v.done = $('dn').checked; v.desc = $('ds').value;
+    const keep = () => { v.date = $('dt').value; v.time = $('dtt').value; v.dur = +$('dtu').value || null; v.remind = +$('rm').value; v.done = $('dn').checked; if (v.done) v.cancelled = false; v.desc = $('ds').value;
       v.amount = $('am').value === '' ? null : +$('am').value; v.paid = $('pd').checked; };
     const add = k => { keep(); const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.multiple = true;
       i.onchange = async () => { for (const f of i.files) { const id = newId(); await putPhoto(id, await shrink(f)); v[k].push(id); added.push(id); } draw(); };
@@ -491,6 +536,11 @@ function editVisit(cid, vid, back){
       const nx = $('nx').value;
       if (nx) c.visits.push({id: newId(), date: nx, time: $('nxt').value, dur: +$('nxu').value || null, done: false, desc: '',
         remind: 1, amount: null, paid: false, before: [], after: []});
+      removed.forEach(delPhoto); saveClient(c); back(); };
+    if ($('cx')) $('cx').onclick = () => {
+      if (!v.cancelled && !confirm('Anulować to zlecenie? Zniknie z kalendarza i przypomnień.')) return;
+      keep(); v.cancelled = !v.cancelled; if (v.cancelled) v.done = false;
+      const i = c.visits.findIndex(x => x.id === v.id); if (i >= 0) c.visits[i] = v;
       removed.forEach(delPhoto); saveClient(c); back(); };
     if (!isNew) $('d').onclick = () => { if (confirm('Usunąć wizytę i jej zdjęcia?')) {
       c.visits = c.visits.filter(x => x.id !== v.id); [...v.before, ...v.after, ...removed].forEach(delPhoto); saveClient(c); back(); } };
