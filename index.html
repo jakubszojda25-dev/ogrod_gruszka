@@ -61,7 +61,7 @@ nav .ic{font-size:19px;line-height:1.1}
 <body>
 <div class="top">
 <header><button id="back" style="display:none">‹</button><img id="logo" alt=""><span id="title">Gruszka</span></header>
-<nav id="nav" style="display:none"><button id="tNew" class="on"><span class="ic">📰</span>Aktualności</button><button id="tCal"><span class="ic">📅</span>Kalendarz</button><button id="tCli"><span class="ic">👥</span>Klienci</button><button id="tPay"><span class="ic">💰</span>Płatności</button><button id="tHis"><span class="ic">🕘</span>Historia</button></nav>
+<nav id="nav" style="display:none"><button id="tCli" class="on"><span class="ic">👥</span>Klienci</button><button id="tCal"><span class="ic">📅</span>Kalendarz</button><button id="tPay"><span class="ic">💰</span>Płatności</button><button id="tHis"><span class="ic">🕘</span>Historia</button><button id="tNew"><span class="ic">📰</span>Aktualności</button></nav>
 </div>
 <main id="app"><p class="muted">Ładowanie...</p></main>
 
@@ -145,7 +145,7 @@ const byTime = (a, b) => (a.v.time || '99').localeCompare(b.v.time || '99');
 function setVisit(cid, vid, act){
   const c = findClient(cid); if (!c) return;
   const v = (c.visits||[]).find(x => x.id === vid); if (!v) return;
-  if (act === 'done') { v.done = true; v.cancelled = false; if (v.amount == null) v.amount = c.price ?? null; }
+  if (act === 'done') { v.done = true; v.cancelled = false; if (v.amount == null) v.amount = c.price ?? null; v.paid = true; v.paidAt = ymd(new Date()); }
   if (act === 'cancel') { v.cancelled = true; v.done = false; }
   if (act === 'restore') v.cancelled = false;
   saveClient(c); if (view) view();
@@ -217,11 +217,10 @@ function doneDialog(cid, vid){
     <label>Zdjęcia</label><div class="photos" id="mdP" style="margin-bottom:6px"></div>
     <div style="display:flex;gap:8px"><button class="btn sec" style="margin:0" id="mdB">📷 Przed</button><button class="btn sec" style="margin:0" id="mdA">📷 Po</button></div>
     <p class="muted" style="margin:6px 0 8px;text-align:center">z galerii: <a href="#" id="mdGB">przed</a> · <a href="#" id="mdGA">po</a></p>
-    <div style="display:flex;gap:10px;align-items:center"><div style="flex:1"><label>Kwota (zł)</label>
-      <input id="mdK" type="number" inputmode="decimal" value="${v.amount ?? c.price ?? ''}"></div>
-      <label style="flex:1"><input type="checkbox" id="mdZ" style="width:auto"> Zapłacone od razu</label></div>
+    <label>💰 Zapłacona kwota (zł)</label>
+    <input id="mdK" type="number" inputmode="decimal" placeholder="wpisz kwotę" value="${v.amount ?? c.price ?? ''}">
     ${nd ? `<p style="background:var(--g2);padding:10px;border-radius:10px;margin:4px 0">🔁 Następna wizyta zostanie dodana: <b>${shortDate(nd)}</b> (${everyTxt(c.every).toLowerCase()})</p>` : ''}
-    <button class="btn" id="mdS">✓ Zapisz – wizyta wykonana</button><button class="btn sec" id="mdC">Anuluj</button></div>`;
+    <button class="btn" id="mdS">✓ Zapisz – wykonane i zapłacone</button><button class="btn sec" id="mdC">Anuluj</button></div>`;
   document.body.appendChild(w);
   const q = id => w.querySelector('#' + id);
   const drawPh = () => {
@@ -237,8 +236,9 @@ function doneDialog(cid, vid){
   q('mdC').onclick = () => { added.forEach(delPhoto); w.remove(); };
   q('mdS').onclick = () => {
     v.desc = q('mdD').value.trim(); v.done = true; v.cancelled = false;
-    v.amount = q('mdK').value === '' ? null : +q('mdK').value;
-    v.paid = q('mdZ').checked; v.paidAt = v.paid ? ymd(new Date()) : null;
+    const k = q('mdK').value.trim().replace(',', '.');
+    if (k === '' || isNaN(+k)) { alert('Wpisz kwotę (może być 0).'); return q('mdK').focus(); }
+    v.amount = +k; v.paid = true; v.paidAt = ymd(new Date());
     addNext(c, v, plan);
     saveClient(c); w.remove(); if (view) view();
   };
@@ -309,7 +309,7 @@ onAuthStateChanged(auth, u => {
   let first = true;
   unsub = onSnapshot(collection(fs, 'users', u.uid, 'clients'), snap => {
     clients = snap.docs.map(d => d.data());
-    if (first) { first = false; showNews(); } else if (view) view();
+    if (first) { first = false; showClients(); } else if (view) view();
   }, e => alert('Błąd bazy: ' + e.message));
 });
 
@@ -420,13 +420,14 @@ function showNews(){
   const addrs = [...new Set(stops.map(x => x.a))];
   const route = addrs.length ? 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + encodeURIComponent(addrs[addrs.length - 1])
     + (addrs.length > 1 ? '&waypoints=' + encodeURIComponent(addrs.slice(0, -1).join('|')) : '') : '';
-  const due = dueList(), dueSum = due.reduce((s, x) => s + (+x.v.amount || 0), 0);
+  const due = dueList(), mk = today.slice(0, 7);
+  const monthIn = clients.reduce((s, c) => s + (c.visits||[]).filter(v => v.done && v.paid && (v.paidAt || v.date).startsWith(mk)).reduce((t, v) => t + (+v.amount || 0), 0), 0);
   const grp = d => d < today ? '⚠️ Zaległe' : d === today ? '📍 Dziś' : d === tom ? 'Jutro' : d <= wk ? 'W tym tygodniu' : 'Później';
   let html = `<div class="card" style="display:flex;gap:10px">
       <div style="flex:1"><div class="muted">Dziś</div><b style="font-size:20px">${todayV.length} ${pl(todayV.length, 'wizyta', 'wizyty', 'wizyt')}</b>
         ${todayMin ? `<div class="muted">${fmtDur(todayMin)} pracy</div>` : ''}</div>
-      <div style="flex:1;cursor:pointer" id="gopay"><div class="muted">Do zapłaty</div><b style="font-size:20px;color:${dueSum ? '#c62828' : 'inherit'}">${dueSum} zł</b>
-        <div class="muted">${due.length} ${pl(due.length, 'praca', 'prace', 'prac')} ›</div></div></div>
+      <div style="flex:1;cursor:pointer" id="gopay"><div class="muted">Wpłynęło w tym miesiącu</div><b style="font-size:20px;color:var(--g)">${monthIn} zł</b>
+        <div class="muted">${due.length ? `<span style="color:#c62828">${due.length} do rozliczenia</span>` : 'Płatności'} ›</div></div></div>
     ${route ? `<a class="btn sec" style="text-align:center;text-decoration:none;box-sizing:border-box" href="${route}" target="_blank" rel="noopener">🗺 Trasa na dziś (${addrs.length} ${addrs.length === 1 ? 'adres' : 'adresy'})</a>` : ''}
     <p class="muted" style="margin:10px 0 0">Najbliższa wizyta u każdego klienta:</p>`;
   let g = '';
@@ -482,7 +483,8 @@ function markPaid(cid, vid, paid){
   const v = (c.visits||[]).find(x => x.id === vid); if (!v) return;
   if (paid && v.amount == null) {
     const a = prompt('Ile zapłacił klient? (zł)', c.price ?? ''); if (a === null) return;
-    v.amount = a.trim() === '' ? null : +a.replace(',', '.');
+    const k = a.trim().replace(',', '.'); if (k === '' || isNaN(+k)) return alert('Wpisz kwotę (może być 0).');
+    v.amount = +k;
   }
   v.paid = paid; v.paidAt = paid ? ymd(new Date()) : null;
   saveClient(c); if (view) view();
@@ -494,21 +496,53 @@ function bindPay(){
     markPaid(b.dataset.c, b.dataset.vid, b.dataset.pay === '1');
   });
 }
+let payMonth = new Date();
 function showPay(){
   view = showPay; tab('pay'); head('Płatności');
-  const list = dueList().sort((a, b) => a.v.date.localeCompare(b.v.date));
-  const sum = list.reduce((s, x) => s + (+x.v.amount || 0), 0);
-  app.innerHTML = `<div class="card"><div class="muted">Oczekuje na zapłatę</div>
-      <b style="font-size:22px;color:${sum ? '#c62828' : 'inherit'}">${sum} zł</b> <span class="muted">· ${list.length} ${pl(list.length, 'praca', 'prace', 'prac')}</span></div>
-    ${list.map(({c, v}) => `<div class="card" data-c="${c.id}" data-v="${v.id}">
-      <div class="row"><b>${esc(c.name)}</b><span class="muted">${shortDate(v.date)}</span></div>
-      ${v.desc ? `<div>${esc(v.desc)}</div>` : ''}
-      <div class="qrow" style="justify-content:space-between">
-        <span>${v.amount != null ? `<b style="font-size:18px">${v.amount} zł</b>` : '<span class="muted">kwota nieustalona</span>'} <span class="tag orange">oczekuje</span></span>
-        <span style="display:flex;align-items:center;gap:8px"><span class="muted" style="font-size:13px">Zapłacone?</span>
-        <button class="qk ok" data-pay="1" data-c="${c.id}" data-vid="${v.id}">✓</button></span></div></div>`).join('')
-      || '<p class="muted">Wszystko zapłacone 🎉</p>'}
-    <p class="muted">Zapłacone prace znajdziesz w Historii → Płatności.</p>`;
+  const y = payMonth.getFullYear(), m = payMonth.getMonth(), key = ymd(new Date(y, m, 1)).slice(0, 7);
+  const due = dueList().sort((a, b) => a.v.date.localeCompare(b.v.date));
+  const paid = [], done = [], cancelled = [];
+  clients.forEach(c => (c.visits||[]).forEach(v => {
+    if (v.done && v.paid && (v.paidAt || v.date).startsWith(key)) paid.push({c, v});
+    if (v.done && v.date.startsWith(key)) done.push({c, v});
+    if (v.cancelled && v.date.startsWith(key)) cancelled.push({c, v});
+  }));
+  paid.sort((a, b) => (b.v.paidAt || b.v.date).localeCompare(a.v.paidAt || a.v.date));
+  const total = paid.reduce((s, x) => s + (+x.v.amount || 0), 0);
+  const noAmount = paid.filter(x => x.v.amount == null).length;
+  const mins = done.reduce((s, x) => s + (+x.v.dur || 0), 0);
+  const per = {}; paid.forEach(({c, v}) => { per[c.id] = per[c.id] || {c, n: 0, s: 0}; per[c.id].n++; per[c.id].s += +v.amount || 0; });
+  const top = Object.values(per).sort((a, b) => b.s - a.s || b.n - a.n);
+  app.innerHTML = `
+    ${due.length ? `<div class="card" style="border-left:5px solid #e65100"><b>Do rozliczenia (${due.length})</b>
+      <p class="muted" style="margin:2px 0 6px;font-size:13px">Wykonane prace bez zapisanej płatności. Stuknij ✓, aby zaksięgować.</p>
+      ${due.map(({c, v}) => `<div class="card" style="margin:8px 0 0;background:#fff8f0" data-c="${c.id}" data-v="${v.id}">
+        <div class="row"><b>${esc(c.name)}</b><span class="muted">${shortDate(v.date)}</span></div>
+        ${v.desc ? `<div style="font-size:14px">${esc(v.desc)}</div>` : ''}
+        <div class="qrow" style="justify-content:space-between"><span>${v.amount != null ? `<b>${v.amount} zł</b>` : '<span class="muted">brak kwoty</span>'}</span>
+        <button class="qk ok" data-pay="1" data-c="${c.id}" data-vid="${v.id}">✓</button></div></div>`).join('')}</div>` : ''}
+    <div class="card"><div class="row">
+      <button class="btn sec" style="width:auto;margin:0" id="pm">‹</button>
+      <b>${payMonth.toLocaleDateString('pl-PL', {month: 'long', year: 'numeric'})}</b>
+      <button class="btn sec" style="width:auto;margin:0" id="nm">›</button></div></div>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <div class="stat"><span class="muted">Wpłynęło</span><b style="color:var(--g)">${total} zł</b></div>
+      <div class="stat"><span class="muted">Płatności</span><b>${paid.length}</b></div></div>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <div class="stat"><span class="muted">Czas pracy</span><b>${mins ? fmtDur(mins) : '–'}</b></div>
+      <div class="stat"><span class="muted">Anulowane wizyty</span><b>${cancelled.length}</b></div></div>
+    ${noAmount ? `<p style="color:#c62828;font-size:14px">⚠️ ${noAmount} ${pl(noAmount, 'płatność nie ma', 'płatności nie mają', 'płatności nie ma')} wpisanej kwoty, więc nie liczą się do sumy. Stuknij ją i wpisz kwotę.</p>` : ''}
+    ${top.length ? `<h3>Klienci w tym miesiącu</h3>${top.map(x => `<div class="card row" data-id="${x.c.id}">
+      <span><b>${esc(x.c.name)}</b><br><span class="muted">${x.n} ${pl(x.n, 'płatność', 'płatności', 'płatności')}</span></span><b>${x.s} zł</b></div>`).join('')}` : ''}
+    <h3>Historia płatności</h3>
+    ${paid.map(({c, v}) => `<div class="card" data-c="${c.id}" data-v="${v.id}" style="${v.amount == null ? 'border-left:5px solid #c62828' : ''}">
+      <div class="row"><b>${esc(c.name)}</b><b>${v.amount != null ? v.amount + ' zł' : '<span style="color:#c62828">brak kwoty</span>'}</b></div>
+      <div class="muted" style="font-size:14px">Zapłacono: ${shortDate(v.paidAt || v.date)}${v.paidAt && v.paidAt !== v.date ? ' · praca: ' + shortDate(v.date) : ''}</div>
+      ${v.desc ? `<div style="font-size:14px">${esc(v.desc)}</div>` : ''}</div>`).join('')
+      || '<p class="muted">Brak płatności w tym miesiącu.</p>'}`;
+  $('pm').onclick = () => { payMonth = new Date(y, m - 1, 1); showPay(); };
+  $('nm').onclick = () => { payMonth = new Date(y, m + 1, 1); showPay(); };
+  app.querySelectorAll('[data-id]').forEach(e => e.onclick = () => showClient(e.dataset.id));
   app.querySelectorAll('[data-v]').forEach(e => e.onclick = () => editVisit(e.dataset.c, e.dataset.v, showPay));
   bindPay();
 }
@@ -596,93 +630,30 @@ function bindSwipe(onOpen){
     };
   });
 }
-let histTab = 'done', sumMonth = new Date();
-function showSummary(){
-  $('q').remove();
-  const y = sumMonth.getFullYear(), m = sumMonth.getMonth(), key = ymd(new Date(y, m, 1)).slice(0, 7);
-  const done = [], paidIn = [], cancelled = [];
-  clients.forEach(c => (c.visits||[]).forEach(v => {
-    if (v.done && v.date.startsWith(key)) done.push({c, v});
-    if (v.done && v.paid && (v.paidAt || v.date).startsWith(key)) paidIn.push({c, v});
-    if (v.cancelled && v.date.startsWith(key)) cancelled.push({c, v});
-  }));
-  const sum = a => a.reduce((s, x) => s + (+x.v.amount || 0), 0);
-  const value = sum(done), got = sum(paidIn), wait = sum(done.filter(x => !x.v.paid));
-  const mins = done.reduce((s, x) => s + (+x.v.dur || 0), 0);
-  const per = {}; done.forEach(({c, v}) => { per[c.id] = per[c.id] || {c, n: 0, s: 0}; per[c.id].n++; per[c.id].s += +v.amount || 0; });
-  const top = Object.values(per).sort((a, b) => b.s - a.s || b.n - a.n);
-  $('list').innerHTML = `<div class="card"><div class="row">
-      <button class="btn sec" style="width:auto;margin:0" id="sm">‹</button>
-      <b>${sumMonth.toLocaleDateString('pl-PL', {month: 'long', year: 'numeric'})}</b>
-      <button class="btn sec" style="width:auto;margin:0" id="sn">›</button></div></div>
-    <div style="display:flex;gap:8px;margin-bottom:8px">
-      <div class="stat"><span class="muted">Wykonane prace</span><b>${done.length}</b></div>
-      <div class="stat"><span class="muted">Czas pracy</span><b>${mins ? fmtDur(mins) : '–'}</b></div></div>
-    <div style="display:flex;gap:8px;margin-bottom:8px">
-      <div class="stat"><span class="muted">Wartość prac</span><b>${value} zł</b></div>
-      <div class="stat"><span class="muted">Wpłynęło</span><b style="color:var(--g)">${got} zł</b></div></div>
-    <div style="display:flex;gap:8px;margin-bottom:8px">
-      <div class="stat"><span class="muted">Czeka na zapłatę</span><b style="color:${wait ? '#c62828' : 'inherit'}">${wait} zł</b></div>
-      <div class="stat"><span class="muted">Anulowane</span><b>${cancelled.length}</b></div></div>
-    ${top.length ? `<h3>Klienci w tym miesiącu</h3>${top.map(x => `<div class="card row" data-id="${x.c.id}">
-      <span><b>${esc(x.c.name)}</b><br><span class="muted">${x.n} ${pl(x.n, 'praca', 'prace', 'prac')}</span></span><b>${x.s} zł</b></div>`).join('')}` : '<p class="muted">Brak wykonanych prac w tym miesiącu.</p>'}
-    <p class="muted" style="font-size:13px">„Wpłynęło” liczy płatności według dnia zapłaty, pozostałe pozycje według dnia wykonania pracy.</p>`;
-  $('sm').onclick = () => { sumMonth = new Date(y, m - 1, 1); showHistory(); };
-  $('sn').onclick = () => { sumMonth = new Date(y, m + 1, 1); showHistory(); };
-  app.querySelectorAll('[data-id]').forEach(e => e.onclick = () => showClient(e.dataset.id));
-}
 function showHistory(){
-  view = showHistory; tab('his'); head('Historia');
-  app.innerHTML = `<div class="seg"><button id="hDone" class="${histTab === 'done' ? 'on' : ''}">✅ Wykonane</button>
-      <button id="hPay" class="${histTab === 'pay' ? 'on' : ''}">💰 Płatności</button>
-      <button id="hSum" class="${histTab === 'sum' ? 'on' : ''}">📊 Miesiąc</button></div>
-    <input id="q" placeholder="🔍 Szukaj: klient, adres, opis">
-    ${histTab === 'done' ? '<p class="muted" style="margin:0 0 4px">Przesuń wpis w lewo, żeby go usunąć.</p>' : ''}<div id="list"></div>`;
-  $('hDone').onclick = () => { histTab = 'done'; showHistory(); };
-  $('hPay').onclick = () => { histTab = 'pay'; showHistory(); };
-  $('hSum').onclick = () => { histTab = 'sum'; showHistory(); };
-  if (histTab === 'sum') return showSummary();
+  view = showHistory; tab('his'); head('Historia prac');
+  app.innerHTML = `<input id="q" placeholder="🔍 Szukaj: klient, adres, opis">
+    <p class="muted" style="margin:0 0 4px">Przesuń wpis w lewo, żeby go usunąć.</p><div id="list"></div>`;
   const draw = () => {
     const f = $('q').value.toLowerCase(), all = [];
     clients.forEach(c => (c.visits||[]).forEach(v => {
-      const ok = histTab === 'done' ? v.done : (v.done && v.paid);
-      if (ok && (c.name + ' ' + c.address + ' ' + (v.desc||'')).toLowerCase().includes(f)) all.push({c, v});
+      if (v.done && (c.name + ' ' + c.address + ' ' + (v.desc||'')).toLowerCase().includes(f)) all.push({c, v});
     }));
-    const dOf = x => histTab === 'pay' ? (x.v.paidAt || x.v.date) : x.v.date;
-    all.sort((a, b) => dOf(b).localeCompare(dOf(a)));
+    all.sort((a, b) => b.v.date.localeCompare(a.v.date));
     let html = '', mon = '';
-    if (histTab === 'done') {
-      all.forEach(({c, v}) => {
-        const m = new Date(v.date + 'T12:00').toLocaleDateString('pl-PL', {month: 'long', year: 'numeric'});
-        if (m !== mon) { mon = m; html += `<h3 style="margin:16px 0 8px">${m}</h3>`; }
-        html += `<div class="sw" data-c="${c.id}" data-v="${v.id}"><button class="swdel">🗑<br>Usuń</button>
-          <div class="card swc">
-          <div class="row"><b>${esc(c.name)}</b><span class="muted">${shortDate(v.date)}</span></div>
-          <div class="muted">${esc(c.address)}</div>${v.desc ? `<div>${esc(v.desc)}</div>` : ''}
-          ${v.amount != null ? `<div style="font-size:14px">${v.amount} zł <span class="tag ${v.paid ? '' : 'orange'}">${v.paid ? 'zapłacone' : 'oczekuje'}</span></div>` : ''}
-          <div class="photos">${[...(v.before||[]).slice(0,2), ...(v.after||[]).slice(0,2)].map(p => `<img data-pid="${p}" draggable="false">`).join('')}</div></div></div>`;
-      });
-      $('list').innerHTML = html || '<p class="muted">Brak wykonanych prac.</p>';
-      loadImgs();
-      bindSwipe((cid, vid) => editVisit(cid, vid, showHistory));
-    } else {
-      const sums = {};
-      all.forEach(x => { const m = dOf(x).slice(0, 7); sums[m] = (sums[m] || 0) + (+x.v.amount || 0); });
-      all.forEach(({c, v}) => {
-        const d = v.paidAt || v.date, mk = d.slice(0, 7);
-        if (mk !== mon) { mon = mk; html += `<div class="row" style="margin:16px 0 8px"><h3 style="margin:0">${new Date(d + 'T12:00').toLocaleDateString('pl-PL', {month: 'long', year: 'numeric'})}</h3>
-          <b>${sums[mk]} zł</b></div>`; }
-        html += `<div class="card" data-c="${c.id}" data-v="${v.id}">
-          <div class="row"><b>${esc(c.name)}</b><b>${v.amount != null ? v.amount + ' zł' : '–'}</b></div>
-          <div class="muted" style="font-size:14px">Praca: ${shortDate(v.date)}${v.paidAt ? ' · zapłacono: ' + shortDate(v.paidAt) : ''}</div>
-          ${v.desc ? `<div>${esc(v.desc)}</div>` : ''}
-          <div class="qrow"><span class="tag">✓ zapłacone</span>
-            <button class="btn sec" style="width:auto;margin:0;padding:8px 12px;font-size:14px" data-pay="0" data-c="${c.id}" data-vid="${v.id}">↩ Cofnij</button></div></div>`;
-      });
-      $('list').innerHTML = html || '<p class="muted">Brak zapłaconych prac.</p>';
-      app.querySelectorAll('[data-v]').forEach(e => e.onclick = () => editVisit(e.dataset.c, e.dataset.v, showHistory));
-      bindPay();
-    }
+    all.forEach(({c, v}) => {
+      const m = new Date(v.date + 'T12:00').toLocaleDateString('pl-PL', {month: 'long', year: 'numeric'});
+      if (m !== mon) { mon = m; html += `<h3 style="margin:16px 0 8px">${m}</h3>`; }
+      html += `<div class="sw" data-c="${c.id}" data-v="${v.id}"><button class="swdel">🗑<br>Usuń</button>
+        <div class="card swc">
+        <div class="row"><b>${esc(c.name)}</b><span class="muted">${shortDate(v.date)}</span></div>
+        <div class="muted">${esc(c.address)}</div>${v.desc ? `<div>${esc(v.desc)}</div>` : ''}
+        ${v.amount != null ? `<div style="font-size:14px">${v.amount} zł <span class="tag ${v.paid ? '' : 'orange'}">${v.paid ? 'zapłacone' : 'do rozliczenia'}</span></div>` : ''}
+        <div class="photos">${[...(v.before||[]).slice(0,2), ...(v.after||[]).slice(0,2)].map(p => `<img data-pid="${p}" draggable="false">`).join('')}</div></div></div>`;
+    });
+    $('list').innerHTML = html || '<p class="muted">Brak wykonanych prac.</p>';
+    loadImgs();
+    bindSwipe((cid, vid) => editVisit(cid, vid, showHistory));
   };
   draw();
   $('q').oninput = draw;
@@ -720,9 +691,7 @@ function editClient(id){
   const isNew = !id;
   const c = id ? findClient(id) : {id: newId(), name: '', phone: '', address: '', notes: '', price: null, priceHist: [], visits: []};
   c.visits = c.visits || [];
-  const fv = {id: newId(), date: ymd(new Date()), done: true, desc: '', remind: 1, amount: null, paid: false, before: [], after: []};
-  const added = [];
-  head(isNew ? 'Nowy klient' : 'Edycja klienta', () => { added.forEach(delPhoto); isNew ? showClients() : showClient(id); });
+  head(isNew ? 'Nowy klient' : 'Edycja klienta', () => isNew ? showClients() : showClient(id));
   app.innerHTML = `<div class="card">
     <label>Imię i nazwisko</label><input id="n" value="${esc(c.name)}">
     <label>Telefon</label><input id="p" type="tel" value="${esc(c.phone)}">
@@ -731,43 +700,13 @@ function editClient(id){
     <label>🔁 Powtarzaj wizyty</label><select id="ev">${EVERY.map(([k, t]) => `<option value="${k}" ${(c.every || '') === k ? 'selected' : ''}>${t}</option>`).join('')}</select>
     <p class="muted" style="margin:-4px 0 10px;font-size:13px">Po odhaczeniu wizyty kolejny termin doda się sam.</p>
     <label>Notatki (np. rodzaj żywopłotu, kod do bramy)</label><textarea id="no" rows="3">${esc(c.notes)}</textarea>
-    ${isNew ? `</div><div class="card"><h3 style="margin-top:0">Pierwsza wizyta (opcjonalnie)</h3>
-    <label>Data</label><input id="fd" type="date" value="${fv.date}">
-    ${timeFields('fd', fv)}
-    <label><input type="checkbox" id="fdn" style="width:auto" checked> Wykonane</label><br><br>
-    <label>Opis – co zostało zrobione</label><textarea id="fds" rows="3"></textarea>
-    <label>Zdjęcia PRZED</label><div class="photos" id="pb"></div>
-    <button class="btn sec" id="ab">📷 Dodaj zdjęcia przed</button><br>
-    <label>Zdjęcia PO</label><div class="photos" id="pa"></div>
-    <button class="btn sec" id="aa">📷 Dodaj zdjęcia po</button><br>
-    </div><div class="card"><h3 style="margin-top:0">📅 Dodaj do kalendarza – kiedy mam być</h3>
+    ${isNew ? `</div><div class="card"><h3 style="margin-top:0">📅 Dodaj do kalendarza – kiedy mam być</h3>
     <label>Data</label><input id="fnx" type="date">
     ${timeFields('fnx', {})}
+    <label>Usługa – co jest do zrobienia</label><textarea id="fnxs" rows="2" placeholder="np. przycięcie żywopłotu"></textarea>
     <label>Przypomnij</label><select id="fnxr"><option value="-1">Nie przypominaj</option><option value="0">W dniu wizyty</option>
       <option value="1" selected>1 dzień wcześniej</option><option value="2">2 dni wcześniej</option><option value="7">Tydzień wcześniej</option></select>` : ''}
-    <button class="btn" id="s">Zapisz</button>${isNew ? '' : '<button class="btn del" id="d">Usuń klienta</button>'}</div>
-    ${isNew ? '<p class="muted">Dotknij zdjęcia, aby je usunąć.</p>' : ''}`;
-
-  if (isNew) {
-    const drawPh = () => {
-      [['before', 'pb'], ['after', 'pa']].forEach(([k, el]) => {
-        $(el).innerHTML = fv[k].map((pid, i) => `<img data-pid="${pid}" data-k="${k}" data-i="${i}">`).join('');
-      });
-      loadImgs();
-      app.querySelectorAll('#pb img, #pa img').forEach(im => im.onclick = () => {
-        if (!confirm('Usunąć to zdjęcie?')) return;
-        delPhoto(fv[im.dataset.k].splice(+im.dataset.i, 1)[0]); drawPh();
-      });
-    };
-    const addPh = k => {
-      const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.multiple = true;
-      i.onchange = async () => { for (const f of i.files) { const pid = newId(); await putPhoto(pid, await shrink(f)); fv[k].push(pid); added.push(pid); } drawPh(); };
-      i.click();
-    };
-    $('ab').onclick = () => addPh('before');
-    $('aa').onclick = () => addPh('after');
-  }
-
+    <button class="btn" id="s">Zapisz</button>${isNew ? '' : '<button class="btn del" id="d">Usuń klienta</button>'}</div>`;
   $('s').onclick = () => {
     c.name = $('n').value.trim(); if (!c.name) return alert('Podaj imię i nazwisko');
     c.phone = $('p').value.trim(); c.address = $('a').value.trim(); c.notes = $('no').value.trim(); c.every = $('ev').value;
@@ -775,14 +714,9 @@ function editClient(id){
     if (np !== null && np !== c.price) (c.priceHist = c.priceHist || []).push({date: ymd(new Date()), price: np});
     c.price = np;
     if (isNew) {
-      fv.desc = $('fds').value.trim();
-      if (fv.desc || fv.before.length || fv.after.length) {
-        fv.date = $('fd').value || ymd(new Date()); fv.done = $('fdn').checked;
-        fv.time = $('fdt').value; fv.dur = +$('fdu').value || null; c.visits.push(fv);
-      }
       const nx = $('fnx').value;
-      if (nx) c.visits.push({id: newId(), date: nx, time: $('fnxt').value, dur: +$('fnxu').value || null, done: false, desc: '',
-        remind: +$('fnxr').value, amount: null, paid: false, before: [], after: []});
+      if (nx) c.visits.push({id: newId(), date: nx, time: $('fnxt').value, dur: +$('fnxu').value || null, done: false, cancelled: false,
+        desc: $('fnxs').value.trim(), remind: +$('fnxr').value, amount: null, paid: false, before: [], after: []});
     }
     saveClient(c); showClient(c.id);
   };
