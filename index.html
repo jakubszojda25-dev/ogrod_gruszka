@@ -125,7 +125,7 @@ const fs = initializeFirestore(fb, { localCache: persistentLocalCache() });
 // ---------- pomocnicze ----------
 const $ = id => document.getElementById(id);
 const app = $('app');
-const APP_VER = '23.10.2026 · 00:10';
+const APP_VER = '23.10.2026 · 00:20';
 
 // ---------- LOGO: drzewo gruszy ----------
 const ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
@@ -345,6 +345,9 @@ const fmtH = h => (Math.round((+h || 0) * 10) / 10).toString().replace('.', ',')
 const hoursOf = v => v.hours != null ? +v.hours : (v.dur ? v.dur / 60 : 0);
 const zl = x => (Math.round((+x || 0) * 100) / 100).toString().replace('.', ',') + ' zł';
 const helperPay = v => (v.helpers || []).reduce((s, h) => s + (+h.pay || 0), 0);
+const paidOutBy = (v, f) => (v.helpers || []).filter(h => h.paidOut && f(h.paidOutAt || v.date)).reduce((s, h) => s + (+h.pay || 0), 0);
+const keepPaidOut = (nw, old) => nw.map(h => { const o = (old || []).find(x => x.id === h.id);
+  return o && o.paidOut && +o.pay === +h.pay ? {...h, paidOut: true, paidOutAt: o.paidOutAt} : h; });
 function helpersHtml(v){
   const list = [...(settings.helpers || [])];
   (v.helpers || []).forEach(x => { if (!list.some(h => h.id === x.id)) list.push({id: x.id, name: x.name}); });
@@ -353,7 +356,7 @@ function helpersHtml(v){
     return `<div class="hrow"><label><input type="checkbox" class="hck" data-hid="${h.id}" data-name="${esc(h.name)}" ${x ? 'checked' : ''}>${esc(h.name)}</label>
       <input class="hh" type="text" inputmode="decimal" autocomplete="off" placeholder="godz." value="${x && x.hours != null ? x.hours : ''}">
       <input class="hp" type="text" inputmode="decimal" autocomplete="off" placeholder="zł" value="${x && x.pay != null ? x.pay : ''}"></div>`; }).join('')}
-    <p class="muted" style="margin:-2px 0 10px;font-size:12px">Wpisz, ile dałeś każdemu pomocnikowi – kwota odliczy się od Twojego zarobku.</p>`;
+    <p class="muted" style="margin:-2px 0 10px;font-size:12px">Wpisz, ile należy się każdemu pomocnikowi. Kwota trafi do Płatności → „Do wypłaty pomocnikom”. Gdy tam stukniesz „Zapłać”, odliczy się od Twojego zarobku.</p>`;
 }
 function bindHelpers(root, myH){
   root.querySelectorAll('.hrow').forEach(r => {
@@ -375,7 +378,7 @@ function teamHtml(sel){
 }
 const readTeam = root => [...root.querySelectorAll('.tck')].filter(x => x.checked).map(x => ({id: x.dataset.hid, name: x.dataset.name}));
 const teamTxt = v => (v.team || []).map(t => esc(t.name)).join(', ');
-const helpersTxt = v => (v.helpers || []).map(h => `${esc(h.name)}${h.hours != null ? ' ' + fmtH(h.hours) : ''}${h.pay ? ' · ' + zl(h.pay) : ''}`).join(', ');
+const helpersTxt = v => (v.helpers || []).map(h => `${esc(h.name)}${h.hours != null ? ' ' + fmtH(h.hours) : ''}${h.pay ? ' · ' + zl(h.pay) + (h.paidOut ? ' ✓' : '') : ''}`).join(', ');
 
 function doneDialog(cid, vid){
   const c = findClient(cid); if (!c) return;
@@ -416,7 +419,7 @@ function doneDialog(cid, vid){
     const k = q('mdK').value.trim().replace(',', '.');
     if (k === '' || isNaN(+k)) { alert('Wpisz kwotę (może być 0).'); return q('mdK').focus(); }
     v.amount = +k; v.paid = true; v.paidAt = ymd(new Date());
-    v.hours = parseH(q('mdH').value); v.helpers = readHelpers(w, v.hours);
+    v.hours = parseH(q('mdH').value); v.helpers = keepPaidOut(readHelpers(w, v.hours), v.helpers);
     if (v.desc) logAdd(c, `${shortDate(v.date)}: ${v.desc}${v.hours ? ' (' + fmtH(v.hours) + ')' : ''}`, 'done');
     addNext(c, v, plan);
     playSiren();
@@ -710,7 +713,8 @@ function showNews(){
   loadWx();
   const todayMin = todayL.reduce((s, x) => s + (+x.v.dur || 0), 0);
   const due = dueList(), mk = today.slice(0, 7);
-  const monthIn = clients.reduce((s, c) => s + (c.visits||[]).filter(v => v.done && v.paid && (v.paidAt || v.date).startsWith(mk)).reduce((t, v) => t + (+v.amount || 0) - helperPay(v), 0), 0);
+  const monthIn = clients.reduce((s, c) => s + (c.visits||[]).reduce((t, v) =>
+    t + (v.done && v.paid && (v.paidAt || v.date).startsWith(mk) ? +v.amount || 0 : 0) - paidOutBy(v, d => d.startsWith(mk)), 0), 0);
 
   const card = ({c, v}, n, color) => `<div class="card" data-c="${c.id}" data-v="${v.id}" style="${color ? 'border-left:5px solid ' + color : ''}">
       <div class="row"><b>${n ? `<span class="tag" style="margin-right:6px">${n}</span>` : ''}${esc(c.name)}</b><span class="muted">${n ? '' : shortDate(v.date)}</span></div>
@@ -811,7 +815,15 @@ function showPay(){
     if (v.cancelled && v.date.startsWith(key)) cancelled.push({c, v});
   }));
   paid.sort((a, b) => (b.v.paidAt || b.v.date).localeCompare(a.v.paidAt || a.v.date));
-  const total = paid.reduce((s, x) => s + (+x.v.amount || 0), 0), outM = paid.reduce((s, x) => s + helperPay(x.v), 0);
+  const total = paid.reduce((s, x) => s + (+x.v.amount || 0), 0);
+  const outM = clients.reduce((s, c) => s + (c.visits || []).reduce((t, v) => t + paidOutBy(v, d => d.startsWith(key)), 0), 0);
+  const owed = {}; clients.forEach(c => (c.visits || []).forEach(v => (v.helpers || []).forEach(h => {
+    if (h.paidOut || !(+h.pay)) return;
+    const o = owed[h.id] = owed[h.id] || {id: h.id, name: h.name, sum: 0, items: []};
+    o.sum += +h.pay; o.items.push({c, v, h}); })));
+  const owedL = Object.values(owed).sort((a, b) => b.sum - a.sum);
+  const outLog = []; clients.forEach(c => (c.visits || []).forEach(v => (v.helpers || []).forEach(h => {
+    if (h.paidOut && +h.pay && (h.paidOutAt || v.date).startsWith(key)) outLog.push({c, v, h}); })));
   const noAmount = paid.filter(x => x.v.amount == null).length;
   const hrs = done.reduce((s, x) => s + hoursOf(x.v), 0);
   const per = {}; paid.forEach(({c, v}) => { per[c.id] = per[c.id] || {c, n: 0, s: 0}; per[c.id].n++; per[c.id].s += +v.amount || 0; });
@@ -824,13 +836,18 @@ function showPay(){
         ${v.desc ? `<div style="font-size:14px">${esc(v.desc)}</div>` : ''}
         <div class="qrow" style="justify-content:space-between"><span>${v.amount != null ? `<b>${v.amount} zł</b>` : '<span class="muted">brak kwoty</span>'}</span>
         <button class="qk ok" data-pay="1" data-c="${c.id}" data-vid="${v.id}">✓</button></div></div>`).join('')}</div>` : ''}
+    ${owedL.length ? `<div class="card" style="border-left:5px solid #e65100"><b>👷 Do wypłaty pomocnikom</b>
+      ${owedL.map(o => `<div class="card" style="margin:8px 0 0;background:#fff8f0">
+        <div class="row"><b style="font-size:17px">${esc(o.name)}</b><b style="font-size:18px;color:#e65100">${zl(o.sum)}</b></div>
+        <div class="muted" style="font-size:13px;margin:4px 0">${o.items.map(x => `${shortDate(x.v.date)} – ${esc(x.c.name)}: ${zl(x.h.pay)}`).join('<br>')}</div>
+        <button class="btn" style="margin:6px 0 0" data-payout="${o.id}">💸 Zapłać ${zl(o.sum)}</button></div>`).join('')}</div>` : ''}
     <div class="card"><div class="row">
       <button class="btn sec" style="width:auto;margin:0" id="pm">‹</button>
       <b>${payMonth.toLocaleDateString('pl-PL', {month: 'long', year: 'numeric'})}</b>
       <button class="btn sec" style="width:auto;margin:0" id="nm">›</button></div></div>
     <div style="display:flex;gap:8px;margin-bottom:8px">
       <div class="stat"><span class="muted">Wpłynęło</span><b>${zl(total)}</b></div>
-      <div class="stat"><span class="muted">Dla pomocników</span><b style="color:#e65100">− ${zl(outM)}</b></div></div>
+      <div class="stat"><span class="muted">Wypłacono pomocnikom</span><b style="color:#e65100">− ${zl(outM)}</b></div></div>
     <div class="stat" style="margin-bottom:8px;background:var(--g2)"><span class="muted">💰 Twój zarobek</span><b style="font-size:24px;color:var(--g)">${zl(total - outM)}</b></div>
     <div style="display:flex;gap:8px;margin-bottom:8px">
       <div class="stat"><span class="muted">Płatności</span><b>${paid.length}</b></div>
@@ -839,13 +856,27 @@ function showPay(){
     ${noAmount ? `<p style="color:#c62828;font-size:14px">⚠️ ${noAmount} ${pl(noAmount, 'płatność nie ma', 'płatności nie mają', 'płatności nie ma')} wpisanej kwoty, więc nie liczą się do sumy. Stuknij ją i wpisz kwotę.</p>` : ''}
     ${top.length ? `<h3>Klienci w tym miesiącu</h3>${top.map(x => `<div class="card row" data-id="${x.c.id}">
       <span><b>${esc(x.c.name)}</b><br><span class="muted">${x.n} ${pl(x.n, 'płatność', 'płatności', 'płatności')}</span></span><b>${x.s} zł</b></div>`).join('')}` : ''}
+    ${outLog.length ? `<h3>Wypłaty pomocnikom</h3>${outLog.sort((a, b) => (b.h.paidOutAt || '').localeCompare(a.h.paidOutAt || '')).map(x => `<div class="card row">
+      <span><b>${esc(x.h.name)}</b><br><span class="muted" style="font-size:13px">${shortDate(x.h.paidOutAt || x.v.date)} · za: ${esc(x.c.name)}, ${shortDate(x.v.date)}</span></span>
+      <b style="color:#e65100">− ${zl(x.h.pay)}</b></div>`).join('')}` : ''}
     <h3>Historia płatności</h3>
     ${paid.map(({c, v}) => `<div class="card" data-c="${c.id}" data-v="${v.id}" style="${v.amount == null ? 'border-left:5px solid #c62828' : ''}">
       <div class="row"><b>${esc(c.name)}</b><b>${v.amount != null ? v.amount + ' zł' : '<span style="color:#c62828">brak kwoty</span>'}</b></div>
-      ${helperPay(v) ? `<div style="font-size:14px;color:#e65100">👷 ${helpersTxt(v)} · zostaje Ci ${zl((+v.amount || 0) - helperPay(v))}</div>` : ''}
+      ${helperPay(v) ? `<div style="font-size:14px;color:#e65100">👷 ${helpersTxt(v)}</div>` : ''}
       <div class="muted" style="font-size:14px">Zapłacono: ${shortDate(v.paidAt || v.date)}${v.paidAt && v.paidAt !== v.date ? ' · praca: ' + shortDate(v.date) : ''}</div>
       ${v.desc ? `<div style="font-size:14px">${esc(v.desc)}</div>` : ''}</div>`).join('')
       || '<p class="muted">Brak płatności w tym miesiącu.</p>'}`;
+  app.querySelectorAll('[data-payout]').forEach(b => b.onclick = () => {
+    const o = owed[b.dataset.payout]; if (!o) return;
+    const today = ymd(new Date()), prevs = [];
+    [...new Set(o.items.map(x => x.c.id))].forEach(cid => {
+      prevs.push(findClient(cid)); const cc = findClient(cid);
+      (cc.visits || []).forEach(v => (v.helpers || []).forEach(h => { if (h.id === o.id && !h.paidOut && +h.pay) { h.paidOut = true; h.paidOutAt = today; } }));
+      saveClient(cc);
+    });
+    showPay();
+    toastUndo(`💸 Zapłacono ${esc(o.name)}: ${zl(o.sum)}`, () => prevs.forEach(p => saveClient(p)));
+  });
   $('pm').onclick = () => { payMonth = new Date(y, m - 1, 1); showPay(); };
   $('nm').onclick = () => { payMonth = new Date(y, m + 1, 1); showPay(); };
   app.querySelectorAll('[data-id]').forEach(e => e.onclick = () => showClient(e.dataset.id));
@@ -863,26 +894,31 @@ function showTeam(){
   const doneV = []; clients.forEach(c => (c.visits||[]).forEach(v => { if (v.done) doneV.push(v); }));
   const sumP = fn => per.map(([, f]) => doneV.filter(v => f(v.date)).reduce((s, v) => s + fn(v), 0));
   const mine = sumP(hoursOf);
-  const income = sumP(v => v.paid ? +v.amount || 0 : 0), out = sumP(helperPay), net = income.map((x, i) => x - out[i]);
+  const allV = []; clients.forEach(c => (c.visits||[]).forEach(v => allV.push(v)));
+  const income = sumP(v => v.paid ? +v.amount || 0 : 0);
+  const out = per.map(([, f]) => allV.reduce((s, v) => s + paidOutBy(v, f), 0)), net = income.map((x, i) => x - out[i]);
   const hOf = id => sumP(v => (v.helpers || []).filter(h => h.id === id).reduce((t, h) => t + (+h.hours || 0), 0));
-  const pOf = id => sumP(v => (v.helpers || []).filter(h => h.id === id).reduce((t, h) => t + (+h.pay || 0), 0));
+  const pOf = id => per.map(([, f]) => allV.reduce((s, v) => s + (v.helpers || []).filter(h => h.id === id && h.paidOut && f(h.paidOutAt || v.date)).reduce((t, h) => t + (+h.pay || 0), 0), 0));
+  const owedOf = id => allV.reduce((s, v) => s + (v.helpers || []).filter(h => h.id === id && !h.paidOut).reduce((t, h) => t + (+h.pay || 0), 0), 0);
   const stats = (arr, f, col) => `<div style="display:flex;gap:6px;margin-top:6px">${arr.map((h, i) =>
     `<div class="stat" style="padding:8px"><span class="muted" style="font-size:13px">${per[i][0]}</span><b style="font-size:17px;${col ? 'color:' + col : ''}">${f(h)}</b></div>`).join('')}</div>`;
   const hs = settings.helpers || [];
   app.innerHTML = `<div class="card"><b>⏱ Twój czas pracy</b>${stats(mine, fmtH)}
       <p class="muted" style="margin:6px 0 0;font-size:13px">Tydzień: ${shortDate(ws)} – ${shortDate(we)}. Liczone z pola „Usługa trwała”.</p></div>
-    <div class="card"><b>💰 Twój zarobek</b> <span class="muted" style="font-size:13px">(wpłaty minus pomocnicy)</span>${stats(net, zl, 'var(--g)')}
-      <div class="muted" style="font-size:13px;margin-top:6px">${per.map((p, i) => `${p[0]}: wpłynęło ${zl(income[i])}, pomocnicy ${zl(out[i])}`).join('<br>')}</div></div>
+    <div class="card"><b>💰 Twój zarobek</b> <span class="muted" style="font-size:13px">(wpłaty minus wypłacone pomocnikom)</span>${stats(net, zl, 'var(--g)')}
+      <div class="muted" style="font-size:13px;margin-top:6px">${per.map((p, i) => `${p[0]}: wpłynęło ${zl(income[i])}, wypłacono ${zl(out[i])}`).join('<br>')}</div></div>
     <h3>👷 Pomocnicy</h3>
     ${hs.map(h => `<div class="card"><div class="row"><b style="font-size:17px">${esc(h.name)}</b>
         <span style="display:flex;gap:6px;flex:none"><button class="btn sec" style="width:auto;margin:0;padding:6px 10px;font-size:14px" data-ren="${h.id}">✏️</button>
         <button class="btn del" style="width:auto;margin:0;padding:6px 10px;font-size:14px" data-del="${h.id}">🗑</button></span></div>
         <div class="muted" style="font-size:13px;margin-top:6px">Godziny</div>${stats(hOf(h.id), fmtH)}
-        <div class="muted" style="font-size:13px;margin-top:8px">Wypłacono</div>${stats(pOf(h.id), zl, '#e65100')}</div>`).join('')
+        <div class="muted" style="font-size:13px;margin-top:8px">Wypłacono</div>${stats(pOf(h.id), zl, '#e65100')}
+        ${owedOf(h.id) ? `<p style="margin:8px 0 0;color:#e65100;font-weight:600">Do wypłaty: ${zl(owedOf(h.id))} <a href="#" data-gopay>› Płatności</a></p>` : ''}</div>`).join('')
       || '<p class="muted">Nie masz jeszcze pomocników.</p>'}
     <div class="card"><label>Dodaj pomocnika</label>
       <div style="display:flex;gap:8px"><input id="hn" placeholder="Imię, np. Kasia" style="margin:0"><button class="btn" style="width:auto;margin:0;padding:0 18px" id="ha">+</button></div></div>
-    <p class="muted" style="font-size:13px">Pomocników zaznaczasz w okienku po odhaczeniu wizyty (✓): wpisujesz ich godziny i ile im dajesz. Ta kwota odlicza się od Twojego zarobku.</p>`;
+    <p class="muted" style="font-size:13px">Pomocników zaznaczasz w okienku po odhaczeniu wizyty (✓): wpisujesz ich godziny i ile im się należy. Wypłacasz w Płatnościach przyciskiem „Zapłać” – dopiero wtedy kwota odlicza się od Twojego zarobku.</p>`;
+  app.querySelectorAll('[data-gopay]').forEach(a => a.onclick = e => { e.preventDefault(); showPay(); });
   $('ha').onclick = () => { const n = $('hn').value.trim(); if (!n) return;
     settings.helpers = [...hs, {id: newId(), name: n}]; saveSettings(); showTeam(); };
   app.querySelectorAll('[data-ren]').forEach(b => b.onclick = () => {
@@ -1166,7 +1202,7 @@ function editVisit(cid, vid, back){
     $('pd').onchange = () => { keep(); draw(); };
     const keep = () => { v.date = $('dt').value;
       if ($('dtt')) { v.time = $('dtt').value; v.dur = +$('dtu').value || null; v.team = readTeam(app); }
-      if ($('vh')) { v.hours = parseH($('vh').value); v.helpers = readHelpers(app, v.hours); }
+      if ($('vh')) { v.hours = parseH($('vh').value); v.helpers = keepPaidOut(readHelpers(app, v.hours), v.helpers); }
       if ($('rm')) v.remind = +$('rm').value; v.done = $('dn').checked; if (v.done) v.cancelled = false; v.desc = $('ds').value;
       v.amount = parseH($('am').value); v.paid = $('pd').checked;
       v.paidAt = v.paid ? (($('pdt') && $('pdt').value) || v.paidAt || ymd(new Date())) : null; };
