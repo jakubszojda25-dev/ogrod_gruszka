@@ -234,13 +234,14 @@ function moveDialog(cid, vid, after = afterDefault){
     <p class="muted" style="margin-top:-8px">${esc(c.name)} · teraz: ${shortDate(v.date)}${v.time ? ', ' + v.time : ''}</p>
     <label>Nowa data</label><input id="mvd" type="date" value="${v.date}">
     ${timeFields('mv', v)}
+    <label>Powód (tylko dla Ciebie, opcjonalnie)</label><input id="mvr" placeholder="np. deszcz, klient poprosił">
     ${c.phone ? '<label><input type="checkbox" id="mvs" style="width:auto" checked> Wyślij klientowi SMS o nowym terminie</label><br><br>' : ''}
     <button class="btn" id="mvS">Przenieś</button><button class="btn sec" id="mvC">Wróć</button>`);
   q('mvC').onclick = () => w.remove();
   q('mvS').onclick = () => {
     const nd = q('mvd').value; if (!nd) return alert('Wybierz nową datę');
     const old = {d: v.date, t: v.time};
-    v.movedFrom = v.date; v.date = nd; v.time = q('mvt').value; v.dur = +q('mvu').value || null;
+    v.movedFrom = v.date; v.moveReason = q('mvr').value.trim(); v.date = nd; v.time = q('mvt').value; v.dur = +q('mvu').value || null;
     saveClient(c); w.remove(); selDay = nd;
     const sms = q('mvs') && q('mvs').checked;
     after();
@@ -531,7 +532,7 @@ function showCal(){
   const dayMin = dayList.filter(x => !x.v.done).reduce((s, x) => s + (+x.v.dur || 0), 0);
   const list = (dayMin ? `<p class="muted">Zaplanowany czas pracy: <b>${fmtDur(dayMin)}</b></p>` : '') + (dayList.map(({c, v}) => `<div class="card" data-c="${c.id}" data-v="${v.id}">
     <div class="row"><b>${esc(c.name)}</b><span>${v.done ? '✅' : '⏳'}</span></div>
-    ${whenTxt(v) ? `<div style="font-size:14px;font-weight:600">${whenTxt(v)}</div>` : ''}${v.movedFrom && !v.done ? `<span class="tag orange">↪ przeniesiona z ${shortDate(v.movedFrom)}</span>` : ''}
+    ${whenTxt(v) ? `<div style="font-size:14px;font-weight:600">${whenTxt(v)}</div>` : ''}${v.movedFrom && !v.done ? `<span class="tag orange">↪ przeniesiona z ${shortDate(v.movedFrom)}${v.moveReason ? ' – ' + esc(v.moveReason) : ''}</span>` : ''}
     <div class="muted">${esc(c.address)}</div>${v.desc ? `<div>${esc(v.desc)}</div>` : ''}
     ${!v.done && (v.team || []).length ? `<div style="font-size:14px">👷 Pomaga: ${teamTxt(v)}</div>` : ''}${quickBtns(c, v)}</div>`).join('')
     || '<p class="muted">Brak wizyt tego dnia.</p>');
@@ -574,7 +575,7 @@ function showNews(){
 
   const card = ({c, v}, n, color) => `<div class="card" data-c="${c.id}" data-v="${v.id}" style="${color ? 'border-left:5px solid ' + color : ''}">
       <div class="row"><b>${n ? `<span class="tag" style="margin-right:6px">${n}</span>` : ''}${esc(c.name)}</b><span class="muted">${n ? '' : shortDate(v.date)}</span></div>
-      ${whenTxt(v) ? `<div style="font-size:14px;font-weight:600">${whenTxt(v)}</div>` : ''}${v.movedFrom ? `<span class="tag orange">↪ przeniesiona z ${shortDate(v.movedFrom)}</span>` : ''}
+      ${whenTxt(v) ? `<div style="font-size:14px;font-weight:600">${whenTxt(v)}</div>` : ''}${v.movedFrom ? `<span class="tag orange">↪ przeniesiona z ${shortDate(v.movedFrom)}${v.moveReason ? ' – ' + esc(v.moveReason) : ''}</span>` : ''}
       ${v.desc ? `<div>🔧 ${esc(v.desc)}</div>` : ''}
       ${(v.team || []).length ? `<div style="font-size:14px">👷 Pomaga: ${teamTxt(v)}</div>` : ''}
       ${c.address ? `<div class="row" style="margin-top:6px;gap:8px"><span style="font-size:14px">📍 ${esc(c.address)}</span>
@@ -839,7 +840,7 @@ function bindSwipe(onOpen){
 function showHistory(){
   view = showHistory; tab('his'); head('Historia prac');
   app.innerHTML = `<input id="q" placeholder="🔍 Szukaj: klient, adres, opis">
-    <p class="muted" style="margin:0 0 4px">Przesuń wpis w lewo, żeby go usunąć.</p><div id="list"></div>`;
+    <p class="muted" style="margin:0 0 4px">Stuknij wpis, aby go poprawić. Przesuń w lewo, żeby usunąć.</p><div id="list"></div>`;
   const draw = () => {
     const f = $('q').value.toLowerCase(), all = [];
     clients.forEach(c => (c.visits||[]).forEach(v => {
@@ -857,7 +858,8 @@ function showHistory(){
         ${v.amount != null ? `<div style="font-size:14px">${v.amount} zł <span class="tag ${v.paid ? '' : 'orange'}">${v.paid ? 'zapłacone' : 'do rozliczenia'}</span></div>` : ''}
         ${hoursOf(v) ? `<div style="font-size:14px">⏱ ${fmtH(hoursOf(v))}</div>` : ''}
         ${(v.helpers || []).length ? `<div style="font-size:14px">👷 ${helpersTxt(v)}</div>` : ''}
-        <div class="photos">${[...(v.before||[]).slice(0,2), ...(v.after||[]).slice(0,2)].map(p => `<img data-pid="${p}" draggable="false">`).join('')}</div></div></div>`;
+        <div class="row" style="align-items:flex-end"><div class="photos">${[...(v.before||[]).slice(0,2), ...(v.after||[]).slice(0,2)].map(p => `<img data-pid="${p}" draggable="false">`).join('')}</div>
+          <span class="smsb" style="margin:0 0 0 auto;background:var(--g2);color:var(--g)">✏️ Edytuj</span></div></div></div>`;
     });
     $('list').innerHTML = html || '<p class="muted">Brak wykonanych prac.</p>';
     loadImgs();
@@ -943,7 +945,7 @@ function editVisit(cid, vid, back){
   const wasDone = !!v.done, plan0 = v.desc || '';
   v.before = v.before || []; v.after = v.after || [];
   const added = [], removed = [];
-  head(c.name, () => { added.forEach(delPhoto); back(); });
+  head(v.done ? '✏️ ' + c.name : c.name, () => { added.forEach(delPhoto); back(); });
   const ph = k => v[k].map((p, i) => `<img data-pid="${p}" data-k="${k}" data-i="${i}">`).join('');
 
   const draw = () => {
@@ -951,13 +953,14 @@ function editVisit(cid, vid, back){
     <label>Data</label><input id="dt" type="date" value="${v.date}">
     ${v.done ? `<label>⏱ Usługa trwała (godz.)</label><input id="vh" type="text" inputmode="decimal" autocomplete="off" placeholder="np. 2,5" value="${v.hours ?? (v.dur ? v.dur / 60 : '')}">
       ${helpersHtml(v)}` : timeFields('dt', v) + teamHtml(v.team)}
-    <label>Przypomnij</label><select id="rm">
+    ${v.done ? '' : `<label>Przypomnij</label><select id="rm">
       ${[[-1,'Nie przypominaj'],[0,'W dniu wizyty'],[1,'1 dzień wcześniej'],[2,'2 dni wcześniej'],[7,'Tydzień wcześniej']]
-        .map(([n, t]) => `<option value="${n}" ${(v.remind ?? 1) == n ? 'selected' : ''}>${t}</option>`).join('')}</select>
+        .map(([n, t]) => `<option value="${n}" ${(v.remind ?? 1) == n ? 'selected' : ''}>${t}</option>`).join('')}</select>`}
     <label><input type="checkbox" id="dn" style="width:auto" ${v.done ? 'checked' : ''}> Wykonane</label><br><br>
     <label>Opis – co zostało zrobione</label><textarea id="ds" rows="4">${esc(v.desc)}</textarea>
     <label>Kwota za tę wizytę (zł)</label><input id="am" type="text" inputmode="decimal" autocomplete="off" value="${v.amount ?? c.price ?? ''}">
     <label><input type="checkbox" id="pd" style="width:auto" ${v.paid ? 'checked' : ''}> Zapłacone</label><br><br>
+    ${v.paid ? `<label>Data zapłaty</label><input id="pdt" type="date" value="${v.paidAt || v.date}">` : ''}
     <label>Zdjęcia PRZED</label><div class="photos">${ph('before')}</div>
     <button class="btn sec" id="ab">📷 Dodaj zdjęcia przed</button><br>
     <label>Zdjęcia PO</label><div class="photos">${ph('after')}</div>
@@ -965,7 +968,7 @@ function editVisit(cid, vid, back){
     <label>Następna wizyta (opcjonalnie)</label><input id="nx" type="date">
     ${timeFields('nx', {})}
     ${v.cancelled ? `<p style="color:#c62828;font-weight:600">🚫 Ta wizyta jest odwołana.${v.cancelReason ? ' Powód: ' + esc(v.cancelReason) : ''}</p>` : ''}
-    ${v.movedFrom && !v.done && !v.cancelled ? `<p class="muted">↪ Przeniesiona z ${shortDate(v.movedFrom)}</p>` : ''}
+    ${v.movedFrom && !v.done && !v.cancelled ? `<p class="muted">↪ Przeniesiona z ${shortDate(v.movedFrom)}${v.moveReason ? '. Powód: ' + esc(v.moveReason) : ''}</p>` : ''}
     <button class="btn" id="s">Zapisz</button>
     ${isNew || v.done ? '' : v.cancelled ? '<button class="btn sec" id="cx">↩️ Przywróć wizytę</button>'
       : '<div style="display:flex;gap:8px"><button class="btn sec" id="mv">📅 Przenieś</button><button class="btn del" id="cx">✕ Odwołaj</button></div>'}
@@ -974,11 +977,13 @@ function editVisit(cid, vid, back){
     loadImgs();
     if ($('vh')) bindHelpers(app, () => parseH($('vh').value));
     $('dn').onchange = () => { keep(); draw(); };
+    $('pd').onchange = () => { keep(); draw(); };
     const keep = () => { v.date = $('dt').value;
       if ($('dtt')) { v.time = $('dtt').value; v.dur = +$('dtu').value || null; v.team = readTeam(app); }
       if ($('vh')) { v.hours = parseH($('vh').value); v.helpers = readHelpers(app, v.hours); }
-      v.remind = +$('rm').value; v.done = $('dn').checked; if (v.done) v.cancelled = false; v.desc = $('ds').value;
-      v.amount = parseH($('am').value); v.paid = $('pd').checked; v.paidAt = v.paid ? (v.paidAt || ymd(new Date())) : null; };
+      if ($('rm')) v.remind = +$('rm').value; v.done = $('dn').checked; if (v.done) v.cancelled = false; v.desc = $('ds').value;
+      v.amount = parseH($('am').value); v.paid = $('pd').checked;
+      v.paidAt = v.paid ? (($('pdt') && $('pdt').value) || v.paidAt || ymd(new Date())) : null; };
     const add = k => { keep(); const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.multiple = true;
       i.onchange = async () => { for (const f of i.files) { const id = newId(); await putPhoto(id, await shrink(f)); v[k].push(id); added.push(id); } draw(); };
       i.click(); };
