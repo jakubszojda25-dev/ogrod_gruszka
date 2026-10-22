@@ -28,7 +28,7 @@ input:focus,textarea:focus,select:focus{outline:2px solid var(--g);border-color:
 label{font-size:13px;color:#4f6f52;font-weight:600}
 h2,h3{color:var(--g)}
 nav{display:flex;background:#fff;border-bottom:2px solid var(--g2);gap:8px;padding:8px 12px}
-nav button{flex:1;padding:11px;border:none;border-radius:10px;background:#f6faf6;font-size:15px;color:#6b8a6e;font-family:inherit}
+nav button{flex:1;padding:11px 4px;border:none;border-radius:10px;background:#f6faf6;font-size:14px;white-space:nowrap;color:#6b8a6e;font-family:inherit}
 nav button.on{background:var(--g);color:#fff;font-weight:700}
 .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
 .grid div{padding:9px 0;border-radius:10px;font-size:14px}
@@ -43,7 +43,7 @@ a{color:var(--g);font-weight:600}
 <body>
 <div class="top">
 <header><button id="back" style="display:none">‹</button><img id="logo" alt=""><span id="title">Gruszka</span></header>
-<nav id="nav" style="display:none"><button id="tCal" class="on">📅 Kalendarz</button><button id="tCli">👥 Klienci</button></nav>
+<nav id="nav" style="display:none"><button id="tCal" class="on">📅 Kalendarz</button><button id="tCli">👥 Klienci</button><button id="tHis">🕘 Historia</button></nav>
 </div>
 <main id="app"><p class="muted">Ładowanie...</p></main>
 
@@ -107,15 +107,29 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;
 function ymd(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function plDate(s){return new Date(s+'T12:00').toLocaleDateString('pl-PL',{weekday:'short',day:'numeric',month:'long',year:'numeric'})}
 function addDays(s,n){const d=new Date(s+'T12:00');d.setDate(d.getDate()+n);return ymd(d)}
+// ---------- godzina i przewidywany czas ----------
+const DURS = [[0,'nie wiem'],[30,'30 min'],[60,'1 godz.'],[90,'1,5 godz.'],[120,'2 godz.'],[150,'2,5 godz.'],[180,'3 godz.'],[240,'4 godz.'],[300,'5 godz.'],[360,'6 godz.'],[480,'cały dzień']];
+const durSel = (id, val) => `<select id="${id}">${DURS.map(([n, t]) => `<option value="${n}" ${(+val || 0) === n ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
+const fmtDur = m => { if (!m) return ''; if (m >= 480) return 'cały dzień'; const h = Math.floor(m / 60), r = m % 60;
+  return (h ? h + ' godz.' : '') + (h && r ? ' ' : '') + (r ? r + ' min' : ''); };
+const endTime = (t, m) => { if (!t || !m || m >= 480) return ''; const [h, mm] = t.split(':').map(Number), x = h * 60 + mm + m;
+  return String(Math.floor(x / 60) % 24).padStart(2, '0') + ':' + String(x % 60).padStart(2, '0'); };
+const whenTxt = v => [v.time ? '🕘 ' + v.time + (endTime(v.time, v.dur) ? '–' + endTime(v.time, v.dur) : '') : '',
+  v.dur ? '⏱ ' + fmtDur(v.dur) : ''].filter(Boolean).join('  ');
+const timeFields = (pre, v) => `<div style="display:flex;gap:8px">
+  <div style="flex:1"><label>Godzina</label><input id="${pre}t" type="time" value="${v.time || ''}"></div>
+  <div style="flex:1"><label>Przewidywany czas</label>${durSel(pre + 'u', v.dur)}</div></div>`;
+const byTime = (a, b) => (a.v.time || '99').localeCompare(b.v.time || '99');
 
 let user = null, clients = [], unsub = null, view = null;
 let calMonth = new Date(), selDay = ymd(new Date()), backFn = null;
 
 function head(t, back){$('title').textContent=t;backFn=back;$('back').style.display=back?'':'none'}
 $('back').onclick = () => backFn && backFn();
-function tab(w){$('tCal').classList.toggle('on',w==='cal');$('tCli').classList.toggle('on',w==='cli')}
+function tab(w){[['tCal','cal'],['tCli','cli'],['tHis','his']].forEach(([i,k])=>$(i).classList.toggle('on',w===k))}
 $('tCal').onclick = () => showCal();
 $('tCli').onclick = () => showClients();
+$('tHis').onclick = () => showHistory();
 
 // ---------- ZDJĘCIA: Firebase + kopia w telefonie ----------
 let pdb;
@@ -178,7 +192,7 @@ function showLogin(){
   view = null; $('nav').style.display = 'none'; head('Gruszka');
   app.innerHTML = `<div class="card">
     <img src="${iconUrl}" style="width:110px;display:block;margin:10px auto;border-radius:24px">
-    <h2 style="margin-top:0;text-align:center">Witaj w Gruszce</h2>
+    <h2 style="margin-top:0;text-align:center">Witaj</h2>
     <label>E-mail</label><input id="em" type="email" autocomplete="username">
     <label>Hasło (min. 6 znaków)</label><input id="pw" type="password" autocomplete="current-password">
     <button class="btn" id="li">Zaloguj się</button>
@@ -245,14 +259,17 @@ function showCal(){
   for (let d = 1; d <= days; d++) { const k = ymd(new Date(y, m, d));
     g += `<div class="day ${byDay[k]?'has':''} ${k===ymd(new Date())?'today':''} ${k===selDay?'sel':''}" data-d="${k}">${d}</div>`; }
   g += '</div>';
-  const list = (byDay[selDay] || []).map(({c, v}) => `<div class="card" data-c="${c.id}" data-v="${v.id}">
+  const dayList = (byDay[selDay] || []).slice().sort(byTime);
+  const dayMin = dayList.filter(x => !x.v.done).reduce((s, x) => s + (+x.v.dur || 0), 0);
+  const list = (dayMin ? `<p class="muted">Zaplanowany czas pracy: <b>${fmtDur(dayMin)}</b></p>` : '') + (dayList.map(({c, v}) => `<div class="card" data-c="${c.id}" data-v="${v.id}">
     <div class="row"><b>${esc(c.name)}</b><span>${v.done ? '✅' : '⏳'}</span></div>
+    ${whenTxt(v) ? `<div style="font-size:14px;font-weight:600">${whenTxt(v)}</div>` : ''}
     <div class="muted">${esc(c.address)}</div>${v.desc ? `<div>${esc(v.desc)}</div>` : ''}</div>`).join('')
-    || '<p class="muted">Brak wizyt tego dnia.</p>';
+    || '<p class="muted">Brak wizyt tego dnia.</p>');
   const rem = reminders();
   const remHtml = rem.length ? `<div class="card" style="border-left:5px solid #f57c00"><b>Przypomnienia (${rem.length})</b>
     ${rem.map(({c, v, t}) => `<div class="card" style="margin:8px 0 0;background:#fff8e1" data-c="${c.id}" data-v="${v.id}">
-      <b>${t}</b><br>${esc(c.name)} – <span class="muted">${esc(c.address)}</span>
+      <b>${t}${v.time ? ', ' + v.time : ''}</b>${v.dur ? ` <span class="muted">(${fmtDur(v.dur)})</span>` : ''}<br>${esc(c.name)} – <span class="muted">${esc(c.address)}</span>
       ${c.phone ? `<br><a href="tel:${esc(c.phone)}" onclick="event.stopPropagation()">📞 Zadzwoń</a>` : ''}</div>`).join('')}</div>` : '';
   app.innerHTML = remHtml + `<div class="card"><div class="row">
     <button class="btn sec" style="width:auto;margin:0" id="pm">‹</button>
@@ -266,23 +283,65 @@ function showCal(){
 }
 
 // ---------- LISTA KLIENTÓW ----------
+let cliSort = 'az';
+const shortDate = s => new Date(s+'T12:00').toLocaleDateString('pl-PL',{day:'numeric',month:'short',year:'numeric'});
+const lastDone = c => (c.visits||[]).filter(v => v.done).sort((a, b) => b.date.localeCompare(a.date))[0];
+const nextPlan = c => { const t = ymd(new Date()); return (c.visits||[]).filter(v => !v.done && v.date >= t).sort((a, b) => a.date.localeCompare(b.date))[0]; };
 function showClients(){
-  view = showClients; tab('cli'); head('Klienci');
-  const cs = clients.slice().sort((a, b) => a.name.localeCompare(b.name, 'pl'));
-  app.innerHTML = `<input id="q" placeholder="🔍 Szukaj...">
+  view = showClients; tab('cli'); head('Lista klientów');
+  app.innerHTML = `<input id="q" placeholder="🔍 Szukaj: nazwisko, adres, telefon">
+    <select id="so"><option value="az">Sortuj: alfabetycznie</option>
+      <option value="old">Sortuj: najdawniej robione</option><option value="new">Sortuj: ostatnio robione</option></select>
     <button class="btn" id="add">+ Nowy klient</button><br><div id="list"></div>
     <p class="muted" style="text-align:center">Zalogowano: ${esc(user.email)}</p>
     <button class="btn sec" id="out">Wyloguj</button>`;
-  const draw = f => {
-    $('list').innerHTML = cs.filter(c => (c.name + c.address + c.phone).toLowerCase().includes(f))
-      .map(c => `<div class="card" data-id="${c.id}"><b>${esc(c.name)}</b><div class="muted">${esc(c.address)}<br>${esc(c.phone)}</div></div>`).join('')
+  $('so').value = cliSort;
+  const draw = () => {
+    const f = $('q').value.toLowerCase();
+    const cs = clients.filter(c => (c.name + ' ' + c.address + ' ' + c.phone).toLowerCase().includes(f))
+      .map(c => ({c, l: lastDone(c), n: nextPlan(c)}));
+    if (cliSort === 'az') cs.sort((a, b) => a.c.name.localeCompare(b.c.name, 'pl'));
+    else { const k = x => x.l ? x.l.date : ''; cs.sort((a, b) => cliSort === 'old' ? k(a).localeCompare(k(b)) : k(b).localeCompare(k(a))); }
+    $('list').innerHTML = cs.map(({c, l, n}) => `<div class="card" data-id="${c.id}"><b>${esc(c.name)}</b>
+      <div class="muted">${esc(c.address)}${c.phone ? ' · ' + esc(c.phone) : ''}</div>
+      <div style="margin-top:6px;font-size:14px">✅ Ostatnio: ${l ? `<b>${shortDate(l.date)}</b>${l.desc ? ' – ' + esc(l.desc.slice(0, 60)) + (l.desc.length > 60 ? '…' : '') : ''}` : '<span class="muted">jeszcze nic</span>'}</div>
+      ${n ? `<div style="font-size:14px">⏳ Następna: <b>${shortDate(n.date)}${n.time ? ', ' + n.time : ''}</b>${n.dur ? ' (' + fmtDur(n.dur) + ')' : ''}</div>` : ''}</div>`).join('')
       || '<p class="muted">Brak klientów.</p>';
     app.querySelectorAll('[data-id]').forEach(e => e.onclick = () => showClient(e.dataset.id));
   };
-  draw('');
-  $('q').oninput = e => draw(e.target.value.toLowerCase());
+  draw();
+  $('q').oninput = draw;
+  $('so').onchange = e => { cliSort = e.target.value; draw(); };
   $('add').onclick = () => editClient(null);
   $('out').onclick = () => { if (confirm('Wylogować?')) signOut(auth); };
+}
+
+// ---------- HISTORIA PRAC ----------
+function showHistory(){
+  view = showHistory; tab('his'); head('Historia prac');
+  app.innerHTML = `<input id="q" placeholder="🔍 Szukaj: klient, adres, opis"><div id="list"></div>`;
+  const draw = () => {
+    const f = $('q').value.toLowerCase(), all = [];
+    clients.forEach(c => (c.visits||[]).forEach(v => {
+      if (v.done && (c.name + ' ' + c.address + ' ' + (v.desc||'')).toLowerCase().includes(f)) all.push({c, v});
+    }));
+    all.sort((a, b) => b.v.date.localeCompare(a.v.date));
+    let html = '', mon = '';
+    all.forEach(({c, v}) => {
+      const m = new Date(v.date + 'T12:00').toLocaleDateString('pl-PL', {month: 'long', year: 'numeric'});
+      if (m !== mon) { mon = m; html += `<h3 style="margin:16px 0 8px">${m}</h3>`; }
+      html += `<div class="card" data-c="${c.id}" data-v="${v.id}">
+        <div class="row"><b>${esc(c.name)}</b><span class="muted">${shortDate(v.date)}</span></div>
+        <div class="muted">${esc(c.address)}</div>${v.desc ? `<div>${esc(v.desc)}</div>` : ''}
+        ${v.amount != null ? `<div style="font-size:14px">${v.amount} zł – ${v.paid ? '✅ zapłacone' : '❌ niezapłacone'}</div>` : ''}
+        <div class="photos">${[...(v.before||[]).slice(0,2), ...(v.after||[]).slice(0,2)].map(p => `<img data-pid="${p}">`).join('')}</div></div>`;
+    });
+    $('list').innerHTML = html || '<p class="muted">Brak wykonanych prac.</p>';
+    loadImgs();
+    app.querySelectorAll('[data-v]').forEach(e => e.onclick = () => editVisit(e.dataset.c, e.dataset.v, showHistory));
+  };
+  draw();
+  $('q').oninput = draw;
 }
 
 // ---------- KARTA KLIENTA ----------
@@ -298,6 +357,7 @@ function showClient(id){
     <button class="btn sec" id="ed">✏️ Edytuj dane i cenę</button></div>
     <button class="btn" id="nv">+ Dodaj wizytę / termin</button><h3>Historia wizyt</h3>
     ${vs.map(v => `<div class="card" data-v="${v.id}"><div class="row"><b>${plDate(v.date)}</b><span>${v.done ? '✅ Zrobione' : '⏳ Zaplanowane'}</span></div>
+      ${whenTxt(v) ? `<div style="font-size:14px">${whenTxt(v)}</div>` : ''}
       ${v.desc ? `<div>${esc(v.desc)}</div>` : ''}
       ${v.amount != null ? `<div>${v.amount} zł – ${v.paid ? '✅ zapłacone' : '❌ niezapłacone'}</div>` : ''}
       <div class="photos">${[...(v.before||[]).slice(0,2), ...(v.after||[]).slice(0,2)].map(p => `<img data-pid="${p}">`).join('')}</div></div>`).join('')
@@ -311,24 +371,74 @@ function showClient(id){
 // ---------- FORMULARZ KLIENTA ----------
 function editClient(id){
   view = null;
+  const isNew = !id;
   const c = id ? findClient(id) : {id: newId(), name: '', phone: '', address: '', notes: '', price: null, priceHist: [], visits: []};
-  head(id ? 'Edycja klienta' : 'Nowy klient', () => id ? showClient(id) : showClients());
+  c.visits = c.visits || [];
+  const fv = {id: newId(), date: ymd(new Date()), done: true, desc: '', remind: 1, amount: null, paid: false, before: [], after: []};
+  const added = [];
+  head(isNew ? 'Nowy klient' : 'Edycja klienta', () => { added.forEach(delPhoto); isNew ? showClients() : showClient(id); });
   app.innerHTML = `<div class="card">
     <label>Imię i nazwisko</label><input id="n" value="${esc(c.name)}">
     <label>Telefon</label><input id="p" type="tel" value="${esc(c.phone)}">
     <label>Adres</label><input id="a" value="${esc(c.address)}">
     <label>Stawka za wizytę (zł)</label><input id="pr" type="number" inputmode="decimal" value="${c.price ?? ''}">
     <label>Notatki (np. rodzaj żywopłotu, kod do bramy)</label><textarea id="no" rows="3">${esc(c.notes)}</textarea>
-    <button class="btn" id="s">Zapisz</button>${id ? '<button class="btn del" id="d">Usuń klienta</button>' : ''}</div>`;
+    ${isNew ? `</div><div class="card"><h3 style="margin-top:0">Pierwsza wizyta (opcjonalnie)</h3>
+    <label>Data</label><input id="fd" type="date" value="${fv.date}">
+    ${timeFields('fd', fv)}
+    <label><input type="checkbox" id="fdn" style="width:auto" checked> Wykonane</label><br><br>
+    <label>Opis – co zostało zrobione</label><textarea id="fds" rows="3"></textarea>
+    <label>Zdjęcia PRZED</label><div class="photos" id="pb"></div>
+    <button class="btn sec" id="ab">📷 Dodaj zdjęcia przed</button><br>
+    <label>Zdjęcia PO</label><div class="photos" id="pa"></div>
+    <button class="btn sec" id="aa">📷 Dodaj zdjęcia po</button><br>
+    </div><div class="card"><h3 style="margin-top:0">📅 Dodaj do kalendarza – kiedy mam być</h3>
+    <label>Data</label><input id="fnx" type="date">
+    ${timeFields('fnx', {})}
+    <label>Przypomnij</label><select id="fnxr"><option value="-1">Nie przypominaj</option><option value="0">W dniu wizyty</option>
+      <option value="1" selected>1 dzień wcześniej</option><option value="2">2 dni wcześniej</option><option value="7">Tydzień wcześniej</option></select>` : ''}
+    <button class="btn" id="s">Zapisz</button>${isNew ? '' : '<button class="btn del" id="d">Usuń klienta</button>'}</div>
+    ${isNew ? '<p class="muted">Dotknij zdjęcia, aby je usunąć.</p>' : ''}`;
+
+  if (isNew) {
+    const drawPh = () => {
+      [['before', 'pb'], ['after', 'pa']].forEach(([k, el]) => {
+        $(el).innerHTML = fv[k].map((pid, i) => `<img data-pid="${pid}" data-k="${k}" data-i="${i}">`).join('');
+      });
+      loadImgs();
+      app.querySelectorAll('#pb img, #pa img').forEach(im => im.onclick = () => {
+        if (!confirm('Usunąć to zdjęcie?')) return;
+        delPhoto(fv[im.dataset.k].splice(+im.dataset.i, 1)[0]); drawPh();
+      });
+    };
+    const addPh = k => {
+      const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.multiple = true;
+      i.onchange = async () => { for (const f of i.files) { const pid = newId(); await putPhoto(pid, await shrink(f)); fv[k].push(pid); added.push(pid); } drawPh(); };
+      i.click();
+    };
+    $('ab').onclick = () => addPh('before');
+    $('aa').onclick = () => addPh('after');
+  }
+
   $('s').onclick = () => {
     c.name = $('n').value.trim(); if (!c.name) return alert('Podaj imię i nazwisko');
     c.phone = $('p').value.trim(); c.address = $('a').value.trim(); c.notes = $('no').value.trim();
     const np = $('pr').value === '' ? null : +$('pr').value;
     if (np !== null && np !== c.price) (c.priceHist = c.priceHist || []).push({date: ymd(new Date()), price: np});
     c.price = np;
+    if (isNew) {
+      fv.desc = $('fds').value.trim();
+      if (fv.desc || fv.before.length || fv.after.length) {
+        fv.date = $('fd').value || ymd(new Date()); fv.done = $('fdn').checked;
+        fv.time = $('fdt').value; fv.dur = +$('fdu').value || null; c.visits.push(fv);
+      }
+      const nx = $('fnx').value;
+      if (nx) c.visits.push({id: newId(), date: nx, time: $('fnxt').value, dur: +$('fnxu').value || null, done: false, desc: '',
+        remind: +$('fnxr').value, amount: null, paid: false, before: [], after: []});
+    }
     saveClient(c); showClient(c.id);
   };
-  if (id) $('d').onclick = () => { if (confirm('Usunąć klienta, wszystkie wizyty i zdjęcia?')) { removeClient(c); showClients(); } };
+  if (!isNew) $('d').onclick = () => { if (confirm('Usunąć klienta, wszystkie wizyty i zdjęcia?')) { removeClient(c); showClients(); } };
 }
 
 // ---------- FORMULARZ WIZYTY ----------
@@ -346,6 +456,7 @@ function editVisit(cid, vid, back){
   const draw = () => {
     app.innerHTML = `<div class="card">
     <label>Data</label><input id="dt" type="date" value="${v.date}">
+    ${timeFields('dt', v)}
     <label>Przypomnij</label><select id="rm">
       ${[[-1,'Nie przypominaj'],[0,'W dniu wizyty'],[1,'1 dzień wcześniej'],[2,'2 dni wcześniej'],[7,'Tydzień wcześniej']]
         .map(([n, t]) => `<option value="${n}" ${(v.remind ?? 1) == n ? 'selected' : ''}>${t}</option>`).join('')}</select>
@@ -358,10 +469,11 @@ function editVisit(cid, vid, back){
     <label>Zdjęcia PO</label><div class="photos">${ph('after')}</div>
     <button class="btn sec" id="aa">📷 Dodaj zdjęcia po</button><br>
     <label>Następna wizyta (opcjonalnie)</label><input id="nx" type="date">
+    ${timeFields('nx', {})}
     <button class="btn" id="s">Zapisz</button>${isNew ? '' : '<button class="btn del" id="d">Usuń wizytę</button>'}</div>
     <p class="muted">Dotknij zdjęcia, aby je powiększyć lub usunąć.</p>`;
     loadImgs();
-    const keep = () => { v.date = $('dt').value; v.remind = +$('rm').value; v.done = $('dn').checked; v.desc = $('ds').value;
+    const keep = () => { v.date = $('dt').value; v.time = $('dtt').value; v.dur = +$('dtu').value || null; v.remind = +$('rm').value; v.done = $('dn').checked; v.desc = $('ds').value;
       v.amount = $('am').value === '' ? null : +$('am').value; v.paid = $('pd').checked; };
     const add = k => { keep(); const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.multiple = true;
       i.onchange = async () => { for (const f of i.files) { const id = newId(); await putPhoto(id, await shrink(f)); v[k].push(id); added.push(id); } draw(); };
@@ -377,7 +489,8 @@ function editVisit(cid, vid, back){
     $('s').onclick = () => { keep(); if (!v.date) return alert('Wybierz datę');
       const i = c.visits.findIndex(x => x.id === v.id); if (i >= 0) c.visits[i] = v; else c.visits.push(v);
       const nx = $('nx').value;
-      if (nx) c.visits.push({id: newId(), date: nx, done: false, desc: '', remind: 1, amount: null, paid: false, before: [], after: []});
+      if (nx) c.visits.push({id: newId(), date: nx, time: $('nxt').value, dur: +$('nxu').value || null, done: false, desc: '',
+        remind: 1, amount: null, paid: false, before: [], after: []});
       removed.forEach(delPhoto); saveClient(c); back(); };
     if (!isNew) $('d').onclick = () => { if (confirm('Usunąć wizytę i jej zdjęcia?')) {
       c.visits = c.visits.filter(x => x.id !== v.id); [...v.before, ...v.after, ...removed].forEach(delPhoto); saveClient(c); back(); } };
