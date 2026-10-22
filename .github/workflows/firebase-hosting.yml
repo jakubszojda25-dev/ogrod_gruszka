@@ -1,0 +1,20 @@
+# Po każdym wgraniu plików na GitHuba strona sama publikuje się na Firebase Hosting
+# (https://gruszka-7f2e2.web.app). Wymaga sekretu FIREBASE_SERVICE_ACCOUNT w ustawieniach repozytorium.
+name: Publikacja na Firebase
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          channelId: live
+          projectId: gruszka-7f2e2
