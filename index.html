@@ -47,7 +47,8 @@ nav .ic{font-size:19px;line-height:1.1}
 .chips label{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid var(--g3);border-radius:20px;font-size:15px;color:inherit;background:#fbfdfb}
 .chips input{width:18px;height:18px;margin:0}
 .modal{position:fixed;inset:0;background:#0007;z-index:20;display:flex;align-items:flex-end;justify-content:center;overflow:auto;-webkit-overflow-scrolling:touch}
-.chat{max-height:340px;overflow:auto;display:flex;flex-direction:column;gap:8px;padding:4px 2px 8px}
+.chat{height:300px;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;display:flex;flex-direction:column;gap:8px;padding:4px 2px 8px;border-bottom:1px solid var(--g2);margin-bottom:8px}
+.chat>:first-child{margin-top:auto}
 .bub{align-self:flex-start;max-width:88%;background:var(--g2);border-radius:16px 16px 16px 4px;padding:8px 12px;position:relative}
 .bub.me{align-self:flex-end;background:var(--g);color:#fff;border-radius:16px 16px 4px 16px}
 .bub .meta{font-size:11px;opacity:.7;margin-top:3px;display:flex;gap:10px;justify-content:space-between;align-items:center}
