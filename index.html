@@ -906,11 +906,16 @@ function editClient(id){
   const isNew = !id;
   const c = id ? findClient(id) : {id: newId(), name: '', phone: '', address: '', notes: '', price: null, priceHist: [], visits: []};
   c.visits = c.visits || [];
+  if (c.street == null) { const a = (c.address || '').trim(), k = a.lastIndexOf(',');
+    c.street = k > 0 ? a.slice(0, k).trim() : a; c.city = k > 0 ? a.slice(k + 1).trim() : ''; }
+  if (!c.city) c.city = 'Studzionka';
   head(isNew ? 'Nowy klient' : 'Edycja klienta', () => isNew ? showClients() : showClient(id));
   app.innerHTML = `<div class="card">
     <label>Imię i nazwisko</label><input id="n" value="${esc(c.name)}">
     <label>Telefon</label><input id="p" type="tel" value="${esc(c.phone)}">
-    <label>Adres</label><input id="a" value="${esc(c.address)}">
+    <div style="display:flex;gap:8px">
+      <div style="flex:3"><label>Ulica i numer domu</label><input id="a" value="${esc(c.street)}" placeholder="np. Lipowa 5"></div>
+      <div style="flex:2"><label>Miejscowość</label><input id="ct" value="${esc(c.city)}"></div></div>
     <label>Stawka za wizytę (zł)</label><input id="pr" type="text" inputmode="decimal" autocomplete="off" value="${c.price ?? ''}">
     <label>🔁 Powtarzaj wizyty</label><select id="ev">${EVERY.map(([k, t]) => `<option value="${k}" ${(c.every || '') === k ? 'selected' : ''}>${t}</option>`).join('')}</select>
     <p class="muted" style="margin:-4px 0 10px;font-size:13px">Po odhaczeniu wizyty kolejny termin doda się sam.</p>
@@ -918,7 +923,8 @@ function editClient(id){
     <button class="btn" id="s">Zapisz</button>${isNew ? '' : '<button class="btn del" id="d">Usuń klienta</button>'}</div>`;
   $('s').onclick = () => {
     c.name = $('n').value.trim(); if (!c.name) return alert('Podaj imię i nazwisko');
-    c.phone = $('p').value.trim(); c.address = $('a').value.trim(); c.notes = $('no').value.trim(); c.every = $('ev').value;
+    c.phone = $('p').value.trim(); c.street = $('a').value.trim(); c.city = $('ct').value.trim();
+    c.address = [c.street, c.city].filter(Boolean).join(', '); c.notes = $('no').value.trim(); c.every = $('ev').value;
     const np = parseH($('pr').value);
     if (np !== null && np !== c.price) (c.priceHist = c.priceHist || []).push({date: ymd(new Date()), price: np});
     c.price = np;
