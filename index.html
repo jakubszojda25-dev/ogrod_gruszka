@@ -43,6 +43,9 @@ nav .ic{font-size:19px;line-height:1.1}
 .hrow label{flex:1;font-size:16px;color:inherit;font-weight:600;display:flex;align-items:center;gap:8px}
 .hrow input[type=checkbox]{width:22px;height:22px;margin:0}
 .hrow .hh{width:96px;margin:0}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 12px}
+.chips label{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid var(--g3);border-radius:20px;font-size:15px;color:inherit;background:#fbfdfb}
+.chips input{width:18px;height:18px;margin:0}
 .modal{position:fixed;inset:0;background:#0007;z-index:20;display:flex;align-items:flex-end;justify-content:center}
 .sheet{background:#fff;width:100%;max-width:600px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:16px 16px calc(18px + env(safe-area-inset-bottom))}
 .stat{flex:1;background:#f6faf6;border-radius:12px;padding:10px}.stat b{display:block;font-size:20px}
@@ -278,7 +281,7 @@ function planNext(c, v){
 }
 function addNext(c, v, plan){
   const d = planNext(c, v); if (!d) return null;
-  c.visits.push({id: newId(), date: d, time: v.time || '', dur: v.dur || null, done: false, cancelled: false, desc: plan || '',
+  c.visits.push({id: newId(), date: d, time: v.time || '', dur: v.dur || null, done: false, cancelled: false, desc: plan || '', team: v.team || [],
     remind: v.remind ?? 1, amount: null, paid: false, before: [], after: []});
   return d;
 }
@@ -290,7 +293,13 @@ function pickPhotos(cam, onFile){
   i.onchange = async () => { for (const f of i.files) await onFile(f); }; i.click();
 }
 // ---------- godziny pracy i pomocnicy ----------
-const parseH = t => { t = String(t ?? '').trim().replace(',', '.'); return t === '' || isNaN(+t) ? null : +t; };
+const parseH = t => {
+  t = String(t ?? '').trim().toLowerCase(); if (!t) return null;
+  const hm = t.match(/^(\d+)\s*[:h]\s*(\d{1,2})\s*(min)?$/);            // 2:30 albo 2h30
+  if (hm) return +hm[1] + +hm[2] / 60;
+  const n = t.replace(',', '.').match(/\d+(\.\d+)?/); if (!n) return null;  // „3 h”, „3h”, „2,5 godz.”
+  return /min/.test(t) && !/h|godz/.test(t) ? +n[0] / 60 : +n[0];
+};
 const fmtH = h => (Math.round((+h || 0) * 10) / 10).toString().replace('.', ',') + ' h';
 const hoursOf = v => v.hours != null ? +v.hours : (v.dur ? v.dur / 60 : 0);
 function helpersHtml(v){
@@ -313,6 +322,13 @@ const readHelpers = (root, myH) => [...root.querySelectorAll('.hrow')].map(r => 
   const h = parseH(r.querySelector('.hh').value);
   return {id: ck.dataset.hid, name: ck.dataset.name, hours: h ?? myH ?? null};
 }).filter(Boolean);
+function teamHtml(sel){
+  const hs = settings.helpers || []; if (!hs.length) return '';
+  return `<label>👷 Kto będzie pomagał</label><div class="chips">${hs.map(h =>
+    `<label><input type="checkbox" class="tck" data-hid="${h.id}" data-name="${esc(h.name)}" ${(sel || []).some(t => t.id === h.id) ? 'checked' : ''}>${esc(h.name)}</label>`).join('')}</div>`;
+}
+const readTeam = root => [...root.querySelectorAll('.tck')].filter(x => x.checked).map(x => ({id: x.dataset.hid, name: x.dataset.name}));
+const teamTxt = v => (v.team || []).map(t => esc(t.name)).join(', ');
 const helpersTxt = v => (v.helpers || []).map(h => `${esc(h.name)}${h.hours != null ? ' ' + fmtH(h.hours) : ''}`).join(', ');
 
 function doneDialog(cid, vid){
@@ -320,6 +336,7 @@ function doneDialog(cid, vid){
   const v = (c.visits||[]).find(x => x.id === vid); if (!v) return;
   v.before = v.before || []; v.after = v.after || [];
   const plan = v.desc || '', added = [], nd = planNext(c, v);
+  if (!(v.helpers || []).length && (v.team || []).length) v.helpers = v.team.map(t => ({id: t.id, name: t.name, hours: null}));
   const w = document.createElement('div'); w.className = 'modal';
   w.innerHTML = `<div class="sheet">
     <div class="row"><h3 style="margin:0">✓ ${esc(c.name)}</h3><span class="muted">${shortDate(v.date)}</span></div>
@@ -515,7 +532,8 @@ function showCal(){
   const list = (dayMin ? `<p class="muted">Zaplanowany czas pracy: <b>${fmtDur(dayMin)}</b></p>` : '') + (dayList.map(({c, v}) => `<div class="card" data-c="${c.id}" data-v="${v.id}">
     <div class="row"><b>${esc(c.name)}</b><span>${v.done ? '✅' : '⏳'}</span></div>
     ${whenTxt(v) ? `<div style="font-size:14px;font-weight:600">${whenTxt(v)}</div>` : ''}${v.movedFrom && !v.done ? `<span class="tag orange">↪ przeniesiona z ${shortDate(v.movedFrom)}</span>` : ''}
-    <div class="muted">${esc(c.address)}</div>${v.desc ? `<div>${esc(v.desc)}</div>` : ''}${quickBtns(c, v)}</div>`).join('')
+    <div class="muted">${esc(c.address)}</div>${v.desc ? `<div>${esc(v.desc)}</div>` : ''}
+    ${!v.done && (v.team || []).length ? `<div style="font-size:14px">👷 Pomaga: ${teamTxt(v)}</div>` : ''}${quickBtns(c, v)}</div>`).join('')
     || '<p class="muted">Brak wizyt tego dnia.</p>');
   reminders();
   app.innerHTML = `<div class="card"><div class="row">
@@ -558,6 +576,7 @@ function showNews(){
       <div class="row"><b>${n ? `<span class="tag" style="margin-right:6px">${n}</span>` : ''}${esc(c.name)}</b><span class="muted">${n ? '' : shortDate(v.date)}</span></div>
       ${whenTxt(v) ? `<div style="font-size:14px;font-weight:600">${whenTxt(v)}</div>` : ''}${v.movedFrom ? `<span class="tag orange">↪ przeniesiona z ${shortDate(v.movedFrom)}</span>` : ''}
       ${v.desc ? `<div>🔧 ${esc(v.desc)}</div>` : ''}
+      ${(v.team || []).length ? `<div style="font-size:14px">👷 Pomaga: ${teamTxt(v)}</div>` : ''}
       ${c.address ? `<div class="row" style="margin-top:6px;gap:8px"><span style="font-size:14px">📍 ${esc(c.address)}</span>
         <a class="smsb" style="margin:0;background:var(--g2);color:var(--g)" href="${navUrl(c.address)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🧭 Nawiguj</a></div>` : ''}
       ${c.phone ? `<div style="font-size:14px;margin-top:4px">📞 <a href="tel:${esc(c.phone)}" onclick="event.stopPropagation()">${esc(c.phone)}</a></div>` : ''}
@@ -601,6 +620,7 @@ function addVisit(date, back){
     <label>Data</label><input id="avd" type="date" value="${date}">
     ${timeFields('av', {})}
     <label>Usługa – co jest do zrobienia</label><textarea id="avs" rows="3" placeholder="np. przycięcie żywopłotu, koszenie"></textarea>
+    ${teamHtml([])}
     <label>Przypomnij</label><select id="avr"><option value="-1">Nie przypominaj</option><option value="0">W dniu wizyty</option>
       <option value="1" selected>1 dzień wcześniej</option><option value="2">2 dni wcześniej</option><option value="7">Tydzień wcześniej</option></select>
     <button class="btn" id="s">Zapisz wizytę</button>
@@ -610,7 +630,7 @@ function addVisit(date, back){
     const c = findClient($('cl').value); if (!c) return alert('Wybierz klienta');
     const d = $('avd').value; if (!d) return alert('Wybierz datę');
     (c.visits = c.visits || []).push({id: newId(), date: d, time: $('avt').value, dur: +$('avu').value || null, done: false, cancelled: false,
-      desc: $('avs').value.trim(), remind: +$('avr').value, amount: null, paid: false, before: [], after: []});
+      desc: $('avs').value.trim(), team: readTeam(app), remind: +$('avr').value, amount: null, paid: false, before: [], after: []});
     saveClient(c); selDay = d; back();
   };
 }
@@ -868,7 +888,8 @@ function showClient(id){
       ${v.done ? (hoursOf(v) ? `<div style="font-size:14px;font-weight:600">⏱ Usługa trwała: ${fmtH(hoursOf(v))}</div>` : '')
         : (whenTxt(v) ? `<div style="font-size:14px">${whenTxt(v)}</div>` : '')}
       ${v.desc ? `<div>${esc(v.desc)}</div>` : ''}
-      ${(v.helpers || []).length ? `<div style="font-size:14px">👷 ${helpersTxt(v)}</div>` : ''}
+      ${(v.helpers || []).length ? `<div style="font-size:14px">👷 ${helpersTxt(v)}</div>`
+        : !v.done && (v.team || []).length ? `<div style="font-size:14px">👷 Pomaga: ${teamTxt(v)}</div>` : ''}
       ${v.amount != null ? `<div>${v.amount} zł – ${v.paid ? '✅ zapłacone' : '❌ niezapłacone'}</div>` : ''}
       <div class="photos">${[...(v.before||[]).slice(0,2), ...(v.after||[]).slice(0,2)].map(p => `<img data-pid="${p}">`).join('')}</div>${quickBtns(c, v)}</div>`).join('')
       || '<p class="muted">Brak wizyt.</p>'}`;
@@ -923,7 +944,7 @@ function editVisit(cid, vid, back){
     app.innerHTML = `<div class="card">
     <label>Data</label><input id="dt" type="date" value="${v.date}">
     ${v.done ? `<label>⏱ Usługa trwała (godz.)</label><input id="vh" type="text" inputmode="decimal" autocomplete="off" placeholder="np. 2,5" value="${v.hours ?? (v.dur ? v.dur / 60 : '')}">
-      ${helpersHtml(v)}` : timeFields('dt', v)}
+      ${helpersHtml(v)}` : timeFields('dt', v) + teamHtml(v.team)}
     <label>Przypomnij</label><select id="rm">
       ${[[-1,'Nie przypominaj'],[0,'W dniu wizyty'],[1,'1 dzień wcześniej'],[2,'2 dni wcześniej'],[7,'Tydzień wcześniej']]
         .map(([n, t]) => `<option value="${n}" ${(v.remind ?? 1) == n ? 'selected' : ''}>${t}</option>`).join('')}</select>
@@ -948,7 +969,7 @@ function editVisit(cid, vid, back){
     if ($('vh')) bindHelpers(app, () => parseH($('vh').value));
     $('dn').onchange = () => { keep(); draw(); };
     const keep = () => { v.date = $('dt').value;
-      if ($('dtt')) { v.time = $('dtt').value; v.dur = +$('dtu').value || null; }
+      if ($('dtt')) { v.time = $('dtt').value; v.dur = +$('dtu').value || null; v.team = readTeam(app); }
       if ($('vh')) { v.hours = parseH($('vh').value); v.helpers = readHelpers(app, v.hours); }
       v.remind = +$('rm').value; v.done = $('dn').checked; if (v.done) v.cancelled = false; v.desc = $('ds').value;
       v.amount = parseH($('am').value); v.paid = $('pd').checked; v.paidAt = v.paid ? (v.paidAt || ymd(new Date())) : null; };
